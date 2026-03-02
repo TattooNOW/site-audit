@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+// ─── CONFIGURATION ───
+const GEO_CONFIG = {
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwNjZ1kzDqvqCyi45CKgSljCVE5jGbW1Za1iInIXDo6uJvB5b9n7OP6sjV-O1Nu7MjL/exec',
+  APPS_SCRIPT_SECRET: 'tattoonow_onboarding_2024',
+  TOOL_ID: 'geo-checklist',
+  STORAGE_PREFIX: 'geo_checklist_',
+};
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GEO Visibility Checklist</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep: #0a0a0a;
+  --bg-card: #141414;
+  --bg-card-hover: #1a1a1a;
+  --bg-input: #111111;
+  --border: #2a2a2a;
+  --border-active: #3a3a3a;
+  --text-primary: #fafafa;
+  --text-secondary: #999;
+  --text-muted: #666;
+  --accent: #EA9320;
+  --accent-dim: rgba(234, 147, 32, 0.15);
+  --accent-glow: rgba(234, 147, 32, 0.3);
+  --green: #34d399;
+  --green-dim: rgba(52, 211, 153, 0.15);
+  --red: #f87171;
+  --red-dim: rgba(248, 113, 113, 0.15);
+  --yellow: #fbbf24;
+  --yellow-dim: rgba(251, 191, 36, 0.15);
+  --blue: #60a5fa;
+  --blue-dim: rgba(96, 165, 250, 0.15);
+  --purple: #a78bfa;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+/* ─── LOADING OVERLAY ─── */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--bg-deep);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+}
+.loading-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.loading-spinner {
+  width: 44px; height: 44px;
+  border: 4px solid var(--accent-dim);
+  border-top: 4px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1.25rem;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.loading-text {
+  font-family: 'Roboto Slab', serif;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.loading-subtext {
+  font-family: 'Roboto', sans-serif;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Main content hidden until loaded */
+.app { opacity: 0; transition: opacity 0.4s ease; }
+.app.loaded { opacity: 1; }
+
+body {
+  font-family: 'Roboto', sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app { max-width: 960px; margin: 0 auto; padding: 24px 16px 80px; }
+
+/* ─── HEADER ─── */
+.header { margin-bottom: 32px; }
+.header-brand { font-family: 'Roboto Slab', serif; font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.header-title { font-family: 'Roboto Slab', serif; font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+.header-sub { font-size: 14px; color: var(--text-secondary); }
+
+/* ─── LOCATION DEBUG ─── */
+.location-debug { background: rgba(234, 147, 32, 0.08); border: 1px solid rgba(234, 147, 32, 0.2); border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--text-muted); font-family: 'Roboto Mono', monospace; display: inline-block; margin-bottom: 16px; }
+.location-debug strong { color: var(--accent); }
+.sync-status { display: inline-block; font-size: 11px; color: var(--text-muted); margin-left: 8px; transition: color 0.3s; }
+.sync-status.saving { color: var(--yellow); }
+.sync-status.saved { color: var(--green); }
+.sync-status.error { color: var(--red); }
+
+/* ─── LOAD/PASTE PANEL ─── */
+.load-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 24px; }
+.load-panel.has-data { display: none; }
+.load-panel.has-data.show { display: block; }
+.load-label { font-family: 'Roboto Slab', serif; font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.load-hint { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+.load-textarea { width: 100%; min-height: 120px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-primary); font-family: 'Roboto Mono', monospace; font-size: 12px; padding: 12px; resize: vertical; outline: none; transition: border-color 0.2s; }
+.load-textarea:focus { border-color: var(--accent); }
+.load-textarea::placeholder { color: var(--text-muted); }
+.load-actions { display: flex; gap: 8px; margin-top: 12px; }
+.btn { font-family: 'Roboto', sans-serif; font-size: 13px; font-weight: 500; padding: 8px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); cursor: pointer; transition: all 0.15s; }
+.btn:hover { border-color: var(--border-active); background: var(--bg-card-hover); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+.btn-primary:hover { background: #d4840f; border-color: #d4840f; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.load-error { font-size: 13px; color: var(--red); margin-top: 8px; display: none; }
+
+/* ─── CLIENT HEADER ─── */
+.client-bar { display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.client-bar.active { display: flex; }
+.client-info { flex: 1; min-width: 200px; }
+.client-name { font-family: 'Roboto Slab', serif; font-size: 18px; font-weight: 700; }
+.client-meta { font-size: 13px; color: var(--text-secondary); }
+.client-meta a { color: var(--accent); text-decoration: none; }
+.client-meta a:hover { text-decoration: underline; }
+.client-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tier-badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 10px; border-radius: 4px; background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(234, 147, 32, 0.3); margin-left: 8px; vertical-align: middle; }
+
+/* ─── SCORE CARDS ─── */
+.scores { display: none; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 24px; }
+.scores.active { display: grid; }
+.score-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; text-align: center; }
+.score-grade { font-family: 'Roboto Slab', serif; font-size: 28px; font-weight: 700; line-height: 1; }
+.score-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; letter-spacing: 0.3px; }
+.grade-a, .grade-b { color: var(--green); }
+.grade-c { color: var(--yellow); }
+.grade-d, .grade-f { color: var(--red); }
+
+/* ─── PROGRESS BAR ─── */
+.progress-bar-container { display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 24px; }
+.progress-bar-container.active { display: block; }
+.progress-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.progress-label { font-family: 'Roboto Slab', serif; font-size: 14px; font-weight: 600; }
+.progress-stats { font-size: 13px; color: var(--text-secondary); }
+.progress-stats span { color: var(--accent); font-weight: 700; }
+.progress-track { height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.4s ease; width: 0%; }
+
+/* ─── PHASES ─── */
+.phases { display: none; }
+.phases.active { display: block; }
+.phase { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
+.phase-header { display: flex; align-items: center; padding: 14px 20px; cursor: pointer; user-select: none; transition: background 0.15s; gap: 12px; }
+.phase-header:hover { background: var(--bg-card-hover); }
+.phase-chevron { font-size: 14px; color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
+.phase.open .phase-chevron { transform: rotate(90deg); }
+.phase-title { font-family: 'Roboto Slab', serif; font-size: 15px; font-weight: 600; flex: 1; }
+.phase-timeframe { font-size: 12px; color: var(--text-muted); background: var(--bg-input); padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
+.phase-progress-mini { font-size: 13px; font-weight: 500; color: var(--text-secondary); min-width: 40px; text-align: right; flex-shrink: 0; }
+.phase-progress-mini .done { color: var(--green); }
+.phase-body { display: none; border-top: 1px solid var(--border); }
+.phase.open .phase-body { display: block; }
+
+/* ─── ITEMS ─── */
+.item { display: flex; align-items: flex-start; padding: 12px 20px; gap: 12px; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+.item:last-child { border-bottom: none; }
+.item:hover { background: rgba(255,255,255,0.02); }
+.item.completed { opacity: 0.55; }
+.item.completed .item-task { text-decoration: line-through; }
+.item-check { appearance: none; -webkit-appearance: none; width: 20px; height: 20px; border: 2px solid var(--border-active); border-radius: 4px; cursor: pointer; flex-shrink: 0; margin-top: 1px; position: relative; transition: all 0.15s; background: transparent; }
+.item-check:checked { background: var(--accent); border-color: var(--accent); }
+.item-check:checked::after { content: '\2713'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #000; font-size: 13px; font-weight: 700; }
+.item-content { flex: 1; min-width: 0; }
+.item-task { font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+.item-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
+.item-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.2px; }
+.tag-effort-quick { background: var(--green-dim); color: var(--green); }
+.tag-effort-half { background: var(--yellow-dim); color: var(--yellow); }
+.tag-effort-multi { background: var(--red-dim); color: var(--red); }
+.tag-factor { background: var(--blue-dim); color: var(--blue); }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 600px) {
+  .app { padding: 16px 12px 60px; }
+  .header-title { font-size: 20px; }
+  .scores { grid-template-columns: repeat(3, 1fr); }
+  .score-grade { font-size: 22px; }
+  .client-bar { flex-direction: column; align-items: flex-start; }
+  .phase-header { padding: 12px 14px; }
+  .item { padding: 10px 14px; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading checklist…</div>
+  <div class="loading-subtext">Checking for saved progress</div>
+</div>
+
+<div class="app" id="appContainer">
+  <div class="header">
+    <div class="header-brand">TattooNOW</div>
+    <div class="header-title">GEO Visibility Checklist</div>
+    <div class="header-sub">Audit → Action Plan → Execution Tracker</div>
+  </div>
+
+  <div class="location-debug" id="locationDebug">
+    <strong id="locationIdDisplay">Detecting…</strong>
+    <span class="sync-status" id="syncStatus"></span>
+  </div>
+
+  <div class="load-panel" id="loadPanel">
+    <div class="load-label">Paste Audit JSON</div>
+    <div class="load-hint">Run a GEO audit with the assessment prompt. Copy the JSON checklist block from the output and paste it below.</div>
+    <textarea class="load-textarea" id="jsonInput" placeholder='{"client":{"name":"Studio Name",...},"scores":{...},"phases":[...]}'></textarea>
+    <div class="load-error" id="loadError"></div>
+    <div class="load-actions">
+      <button class="btn btn-primary" onclick="GEO.loadJSON()">Load Checklist</button>
+      <button class="btn" onclick="GEO.loadSample()">Load Sample (Darkside Tattoo)</button>
+    </div>
+  </div>
+
+  <div class="client-bar" id="clientBar">
+    <div class="client-info">
+      <div class="client-name" id="clientName"></div>
+      <div class="client-meta" id="clientMeta"></div>
+    </div>
+    <div class="client-actions">
+      <button class="btn btn-sm" onclick="GEO.exportJSON()">Export JSON</button>
+      <button class="btn btn-sm" onclick="GEO.exportCSV()">Export CSV</button>
+      <button class="btn btn-sm" onclick="GEO.switchClient()">Switch Client</button>
+    </div>
+  </div>
+
+  <div class="scores" id="scores"></div>
+
+  <div class="progress-bar-container" id="progressContainer">
+    <div class="progress-header">
+      <div class="progress-label">Overall Progress</div>
+      <div class="progress-stats"><span id="progressDone">0</span> of <span id="progressTotal">0</span> items complete</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="phases" id="phases"></div>
+</div>
+
+<script>
+const GEO = (function() {
+  'use strict';
+
+  let currentData = null;
+  let currentLocationId = null;
+  let saveDebounceTimer = null;
+
+  // ─── SAMPLE DATA (Darkside Tattoo) ───
+  const SAMPLE = {
+    client: { name: "Darkside Tattoo & Body Piercing", url: "darksidetattoo.com", city: "East Haven", state: "CT", auditDate: "2026-03-01", overallGrade: "D+", tier: "Professional" },
+    scores: {
+      gbp: { grade: "D", label: "GBP Optimization" }, topical: { grade: "F", label: "Topical Relevance" },
+      geographic: { grade: "F", label: "Geographic Relevance" }, citability: { grade: "D", label: "AI Citability" },
+      authority: { grade: "C", label: "Trust & Authority" }, technical: { grade: "D", label: "Technical Health" }
+    },
+    phases: [
+      { id: "phase-0", name: "Foundations", timeframe: "Week 1", items: [
+        { id: "p0-001", task: "Fix homepage title tag", detail: "Change to: Tattoo Shop in East Haven, CT | Greater New Haven | Darkside Tattoo. Business name goes at END.", category: "on-page", effort: "quick-win", factor: "topical", done: false },
+        { id: "p0-002", task: "Fix homepage H1", detail: "Change to: Darkside Tattoo & Body Piercing \u2014 East Haven, CT | Greater New Haven.", category: "on-page", effort: "quick-win", factor: "topical", done: false },
+        { id: "p0-003", task: "Add LocalBusiness schema", detail: "Root entity schema with NAP, hours, geo coordinates, services.", category: "schema", effort: "quick-win", factor: "citability", done: false },
+        { id: "p0-004", task: "Add FAQPage schema", detail: "Markup homepage FAQ accordion. 8 Q&A pairs with concrete facts.", category: "schema", effort: "quick-win", factor: "citability", done: false },
+        { id: "p0-005", task: "Add Person schema for each artist", detail: "7 artists + 1 piercer. Each needs Person schema with worksFor.", category: "schema", effort: "half-day", factor: "citability", done: false },
+        { id: "p0-006", task: "Fix dual domain issue", detail: "301 redirect secondary domain to primary. Both currently resolve.", category: "technical", effort: "quick-win", factor: "technical", done: false },
+        { id: "p0-007", task: "Add Google Maps embed", detail: "Embed GBP map in homepage footer.", category: "on-page", effort: "quick-win", factor: "topical", done: false },
+        { id: "p0-008", task: "Fix NAP inconsistencies", detail: "Yelp shows outdated artists. Saturday hours conflict.", category: "technical", effort: "half-day", factor: "technical", done: false },
+        { id: "p0-009", task: "Fix Bella Taverney bio link", detail: "Artist bio page link is broken (404).", category: "technical", effort: "quick-win", factor: "technical", done: false },
+        { id: "p0-010", task: "Add GBP secondary categories", detail: "Add: Body Piercing Shop. Check Tattoo Removal Service.", category: "gbp", effort: "quick-win", factor: "topical", done: false },
+        { id: "p0-011", task: "Expand GBP services list", detail: "Target 20-30 services. Map every style + specific services.", category: "gbp", effort: "half-day", factor: "topical", done: false }
+      ]},
+      { id: "phase-1", name: "Topical Relevance \u2014 Core 30", timeframe: "Weeks 2\u20138", items: [
+        { id: "p1-001", task: "Rewrite homepage content blocks", detail: "50-70 word blurb per style/service. Target 1,500-2,000 words total.", category: "content", effort: "multi-day", factor: "topical", done: false },
+        { id: "p1-002", task: "Build style page: Realism & Photorealism", detail: "Dave Racci + Ember Cesar. 1,000-2,000 words.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-003", task: "Build style page: Traditional & Neo-Traditional", detail: "Dan Adamczyk + Joe Reis. 1,000-2,000 words.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-004", task: "Build style page: Black & Gray", detail: "Ember Cesar specializes. 1,000-2,000 words.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-005", task: "Build style page: Japanese-Inspired", detail: "Sean O\u2019Hara + Joe Reis. 1,000-2,000 words.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-006", task: "Build style page: Custom Sleeves & Large-Scale", detail: "Sean O\u2019Hara. Portfolio focus.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-007", task: "Build service page: Cover-Up Tattoos", detail: "Before/after gallery, process explanation.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-008", task: "Build service page: Portrait & Memorial Tattoos", detail: "Sean O\u2019Hara + Dave Racci. Strong regional volume.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-009", task: "Build service page: Body Piercing", detail: "Melinda O\u2019Hara. Services, aftercare, pricing, age requirements.", category: "content", effort: "half-day", factor: "topical", done: false },
+        { id: "p1-010", task: "Rebuild all artist bio pages", detail: "Each: name, year started, styles, gallery, booking CTA, Person schema.", category: "content", effort: "multi-day", factor: "citability", done: false },
+        { id: "p1-011", task: "Build dedicated FAQ page", detail: "15-25 questions. 1,500-2,500 words.", category: "content", effort: "half-day", factor: "citability", done: false },
+        { id: "p1-012", task: "Build homepage FAQ accordion", detail: "6-8 highest-intent questions. Include real pricing ($90 min, $175/hr).", category: "content", effort: "half-day", factor: "citability", done: false },
+        { id: "p1-013", task: "Add text testimonials / review quotes", detail: "3-5 text pull-quotes from Google reviews with Review schema.", category: "content", effort: "half-day", factor: "citability", done: false },
+        { id: "p1-014", task: "Add Service/OfferCatalog schema", detail: "Structured markup for each style and service offered.", category: "schema", effort: "half-day", factor: "citability", done: false }
+      ]},
+      { id: "phase-2", name: "Geographic Expansion", timeframe: "Weeks 8\u201316", items: [
+        { id: "p2-001", task: "Build geo page: New Haven", detail: "Primary target. Tattoo Shop Near New Haven, CT.", category: "geo-content", effort: "half-day", factor: "geographic", done: false },
+        { id: "p2-002", task: "Build geo page: Branford", detail: "Adjacent town geo landmark page.", category: "geo-content", effort: "half-day", factor: "geographic", done: false },
+        { id: "p2-003", task: "Build geo page: West Haven", detail: "Adjacent town geo landmark page.", category: "geo-content", effort: "half-day", factor: "geographic", done: false },
+        { id: "p2-004", task: "Build geo page: North Haven", detail: "Adjacent town geo landmark page.", category: "geo-content", effort: "half-day", factor: "geographic", done: false },
+        { id: "p2-005", task: "Build geo page: Hamden", detail: "Adjacent town geo landmark page.", category: "geo-content", effort: "half-day", factor: "geographic", done: false },
+        { id: "p2-006", task: "Build supporting PAA content", detail: "Long-tail query articles: cost in CT, styles for first-timers, age requirements.", category: "content", effort: "multi-day", factor: "citability", done: false }
+      ]},
+      { id: "phase-3", name: "Authority Building", timeframe: "Ongoing", items: [
+        { id: "p3-001", task: "Join East Haven Chamber of Commerce", detail: "$200-500/year for trusted local authority backlink.", category: "links", effort: "half-day", factor: "authority", done: false },
+        { id: "p3-002", task: "Join Greater New Haven Chamber", detail: "Broadens geographic authority signal.", category: "links", effort: "half-day", factor: "authority", done: false },
+        { id: "p3-003", task: "Submit to tattoo community directories", detail: "TattooNOW, TattooFilter, InkMatch, Tattoodo, TattooSEO.", category: "links", effort: "half-day", factor: "authority", done: false },
+        { id: "p3-004", task: "Update/claim Yelp listing", detail: "Fix outdated artist roster + Saturday hours.", category: "links", effort: "half-day", factor: "authority", done: false },
+        { id: "p3-005", task: "Identify local sponsorship opportunities", detail: "Youth sports, community events, art shows in East Haven / Greater New Haven.", category: "links", effort: "multi-day", factor: "authority", done: false },
+        { id: "p3-006", task: "Build 'not slop' links", detail: "Every Core 30 page needs at least one external link pointing to it.", category: "links", effort: "multi-day", factor: "authority", done: false },
+        { id: "p3-007", task: "Pursue local media mentions", detail: "Founded 1992 \u2014 33+ years story. Local newspaper, community involvement.", category: "links", effort: "multi-day", factor: "authority", done: false }
+      ]}
+    ]
+  };
+
+  // ═══════════════════════════════════════════
+  // LOCATION DETECTION (matches Launchpad)
+  // ═══════════════════════════════════════════
+  function getLocationIdFromURL() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get('location') || params.get('locationId') || params.get('locationID') || params.get('loc');
+  }
+
+  function initializeLocationDetection() {
+    console.log('[GEO] Starting location detection...');
+    var locationId = getLocationIdFromURL();
+    if (!locationId) {
+      locationId = localStorage.getItem('supportBlade_locationId');
+      if (locationId) console.log('[GEO] Found locationId from supportBlade:', locationId);
+    }
+    if (!locationId) {
+      setTimeout(function() {
+        if (!currentLocationId) {
+          var sessionId = sessionStorage.getItem('geo_checklist_session_id');
+          if (!sessionId) {
+            sessionId = 'geo_session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            sessionStorage.setItem('geo_checklist_session_id', sessionId);
+          }
+          console.log('[GEO] Using session fallback:', sessionId);
+          setLocationId(sessionId);
+        }
+      }, 2000);
+    } else {
+      setLocationId(locationId);
+    }
+  }
+
+  function setLocationId(locationId) {
+    if (currentLocationId === locationId) return;
+    currentLocationId = locationId;
+    console.log('[GEO] Location:', locationId);
+    document.getElementById('locationIdDisplay').textContent = locationId;
+    loadProgress();
+  }
+
+  function getStorageKey() {
+    return GEO_CONFIG.STORAGE_PREFIX + (currentLocationId || 'default');
+  }
+
+  // ═══════════════════════════════════════════
+  // PERSISTENCE: SAVE
+  // ═══════════════════════════════════════════
+  function setSyncStatus(status, text) {
+    var el = document.getElementById('syncStatus');
+    el.className = 'sync-status ' + status;
+    el.textContent = text || '';
+  }
+
+  function saveState() {
+    if (!currentData || !currentLocationId) return;
+    clearTimeout(saveDebounceTimer);
+    setSyncStatus('saving', '\u27F3 saving\u2026');
+
+    var payload = { data: currentData, lastUpdated: new Date().toISOString(), locationId: currentLocationId };
+    localStorage.setItem(getStorageKey(), JSON.stringify(payload));
+
+    saveDebounceTimer = setTimeout(function() { saveToSheet(payload); }, 1500);
+  }
+
+  async function saveToSheet(payload) {
+    if (!GEO_CONFIG.APPS_SCRIPT_URL) { setSyncStatus('saved', '\u2713 saved locally'); return; }
+    try {
+      // POST because geoData JSON is too large for GET URL params (~15-30KB)
+      // mode: no-cors because Apps Script redirects cross-origin
+      // Response is opaque (can't read it), but the data gets through
+      var postData = {
+        action: 'save',
+        tool: GEO_CONFIG.TOOL_ID,
+        locationId: currentLocationId,
+        geoData: JSON.stringify(payload.data),
+        lastUpdated: payload.lastUpdated,
+        secretKey: GEO_CONFIG.APPS_SCRIPT_SECRET
+      };
+      await fetch(GEO_CONFIG.APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(postData)
+      });
+      // no-cors = opaque response, so we optimistically mark as synced
+      // Load (GET) verifies on next page open
+      setSyncStatus('saved', '\u2713 synced');
+      console.log('[GEO] POST sent to Sheet');
+    } catch (e) { setSyncStatus('error', '\u2717 sync failed'); console.warn('[GEO] Sheet save error:', e); }
+    setTimeout(function() { setSyncStatus('', ''); }, 3000);
+  }
+
+  // ═══════════════════════════════════════════
+  // PERSISTENCE: LOAD
+  // ═══════════════════════════════════════════
+  async function loadProgress() {
+    if (!currentLocationId) { hideLoadingOverlay(); return; }
+    var data = null;
+
+    // Try Google Sheets first
+    if (GEO_CONFIG.APPS_SCRIPT_URL) {
+      try {
+        var url = GEO_CONFIG.APPS_SCRIPT_URL + '?action=load&tool=' + GEO_CONFIG.TOOL_ID + '&locationId=' + currentLocationId + '&secretKey=' + GEO_CONFIG.APPS_SCRIPT_SECRET;
+        var response = await fetch(url);
+        var result = await response.json();
+        if (result.success && result.data && result.data.geoData) {
+          var geoData = typeof result.data.geoData === 'string' ? JSON.parse(result.data.geoData) : result.data.geoData;
+          if (geoData && geoData.client && geoData.phases) { data = geoData; console.log('[GEO] Loaded from Sheet:', geoData.client.name); }
+        }
+      } catch (e) { console.log('[GEO] Sheet fetch failed, trying localStorage:', e.message); }
+    }
+
+    // Fallback: localStorage (new key format)
+    if (!data) {
+      var saved = localStorage.getItem(getStorageKey());
+      if (saved) {
+        try {
+          var parsed = JSON.parse(saved);
+          if (parsed.data && parsed.data.client && parsed.data.phases) { data = parsed.data; console.log('[GEO] Loaded from localStorage:', data.client.name); }
+        } catch (e) {}
+      }
+    }
+
+    // Fallback: scan old-format localStorage keys (pre-refactor, keyed by client URL)
+    if (!data) {
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.startsWith('geo_checklist_') && key !== getStorageKey()) {
+          try {
+            var old = JSON.parse(localStorage.getItem(key));
+            if (old.data && old.data.client) {
+              data = old.data;
+              console.log('[GEO] Migrated from old key:', key);
+              localStorage.setItem(getStorageKey(), JSON.stringify({ data: data, lastUpdated: new Date().toISOString(), locationId: currentLocationId }));
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (data) render(data);
+    hideLoadingOverlay();
+  }
+
+  // ═══════════════════════════════════════════
+  // LOADING OVERLAY
+  // ═══════════════════════════════════════════
+  function hideLoadingOverlay() {
+    var overlay = document.getElementById('loadingOverlay');
+    var app = document.getElementById('appContainer');
+    if (overlay) overlay.classList.add('hidden');
+    if (app) app.classList.add('loaded');
+    console.log('[GEO] Content revealed');
+  }
+
+  // ═══════════════════════════════════════════
+  // CORE FUNCTIONS
+  // ═══════════════════════════════════════════
+  function loadJSON() {
+    var raw = document.getElementById('jsonInput').value.trim();
+    var errorEl = document.getElementById('loadError');
+    if (!raw) { errorEl.textContent = 'Paste the JSON checklist from your audit output.'; errorEl.style.display = 'block'; return; }
+    try {
+      var data = JSON.parse(raw);
+      if (!data.client || !data.phases) throw new Error('Missing required fields: client, phases');
+      errorEl.style.display = 'none';
+      render(data);
+      saveState();
+    } catch(e) { errorEl.textContent = 'Invalid JSON: ' + e.message; errorEl.style.display = 'block'; }
+  }
+
+  function loadSample() {
+    var data = JSON.parse(JSON.stringify(SAMPLE));
+    render(data);
+    saveState();
+  }
+
+  function switchClient() {
+    currentData = null;
+    document.getElementById('loadPanel').classList.remove('has-data');
+    document.getElementById('clientBar').classList.remove('active');
+    document.getElementById('scores').classList.remove('active');
+    document.getElementById('progressContainer').classList.remove('active');
+    document.getElementById('phases').classList.remove('active');
+    document.getElementById('jsonInput').value = '';
+  }
+
+  function exportJSON() {
+    if (!currentData) return;
+    var blob = new Blob([JSON.stringify(currentData, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (currentData.client.url || 'checklist').replace(/[^a-z0-9]/gi, '-') + '-checklist.json'; a.click();
+  }
+
+  function exportCSV() {
+    if (!currentData) return;
+    var csv = 'Client,Tier,Phase,Task,Detail,Effort,Factor,Status\n';
+    currentData.phases.forEach(function(phase) {
+      phase.items.forEach(function(item) {
+        csv += ['"' + (currentData.client.name||'').replace(/"/g,'""') + '"', currentData.client.tier||'', phase.name,
+          '"' + item.task.replace(/"/g,'""') + '"', '"' + (item.detail||'').replace(/"/g,'""') + '"',
+          item.effort||'', item.factor||'', item.done ? 'Done' : 'Open'].join(',') + '\n';
+      });
+    });
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (currentData.client.url || 'checklist').replace(/[^a-z0-9]/gi, '-') + '-checklist.csv'; a.click();
+  }
+
+  // ═══════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════
+  function gradeClass(grade) {
+    if (!grade) return '';
+    var g = grade.replace(/[^A-F]/gi, '').charAt(0).toUpperCase();
+    if (g === 'A' || g === 'B') return 'grade-a';
+    if (g === 'C') return 'grade-c';
+    return 'grade-d';
+  }
+  function effortLabel(e) { return e === 'quick-win' ? 'Quick Win' : e === 'half-day' ? 'Half Day' : e === 'multi-day' ? 'Multi-Day' : (e||''); }
+  function factorLabel(f) { var m = { topical:'Topical', geographic:'Geographic', citability:'AI Citability', authority:'Authority', technical:'Technical' }; return m[f]||f||''; }
+
+  function render(data) {
+    currentData = data;
+    document.getElementById('loadPanel').classList.add('has-data');
+    document.getElementById('clientBar').classList.add('active');
+    document.getElementById('clientName').innerHTML = data.client.name + (data.client.tier ? '<span class="tier-badge">' + data.client.tier + '</span>' : '');
+    var meta = '';
+    if (data.client.url) meta += '<a href="https://' + data.client.url + '" target="_blank">' + data.client.url + '</a>';
+    if (data.client.city) meta += ' \u00b7 ' + data.client.city + ', ' + (data.client.state || '');
+    if (data.client.auditDate) meta += ' \u00b7 Audited ' + data.client.auditDate;
+    if (data.client.overallGrade) meta += ' \u00b7 Grade: <strong>' + data.client.overallGrade + '</strong>';
+    document.getElementById('clientMeta').innerHTML = meta;
+
+    var scoresEl = document.getElementById('scores');
+    if (data.scores) {
+      scoresEl.classList.add('active');
+      scoresEl.innerHTML = Object.values(data.scores).map(function(s) {
+        return '<div class="score-card"><div class="score-grade ' + gradeClass(s.grade) + '">' + s.grade + '</div><div class="score-label">' + s.label + '</div></div>';
+      }).join('');
+    }
+
+    var phasesEl = document.getElementById('phases');
+    phasesEl.classList.add('active');
+    phasesEl.innerHTML = data.phases.map(function(phase, pi) {
+      var totalItems = phase.items.length;
+      var doneItems = phase.items.filter(function(i) { return i.done; }).length;
+      return '<div class="phase ' + (pi === 0 ? 'open' : '') + '" data-phase="' + phase.id + '">' +
+        '<div class="phase-header" onclick="GEO.togglePhase(this)">' +
+          '<span class="phase-chevron">\u25b8</span>' +
+          '<span class="phase-title">' + phase.name + '</span>' +
+          '<span class="phase-timeframe">' + (phase.timeframe || '') + '</span>' +
+          '<span class="phase-progress-mini"><span class="' + (doneItems === totalItems && totalItems > 0 ? 'done' : '') + '">' + doneItems + '</span>/' + totalItems + '</span>' +
+        '</div><div class="phase-body">' +
+          phase.items.map(function(item) {
+            return '<div class="item ' + (item.done ? 'completed' : '') + '" data-item="' + item.id + '">' +
+              '<input type="checkbox" class="item-check" ' + (item.done ? 'checked' : '') + ' onchange="GEO.toggleItem(\'' + phase.id + '\',\'' + item.id + '\',this.checked)">' +
+              '<div class="item-content"><div class="item-task">' + item.task + '</div>' +
+              (item.detail ? '<div class="item-detail">' + item.detail + '</div>' : '') +
+              '<div class="item-tags">' +
+                (item.effort ? '<span class="tag tag-effort-' + (item.effort==='quick-win'?'quick':item.effort==='half-day'?'half':'multi') + '">' + effortLabel(item.effort) + '</span>' : '') +
+                (item.factor ? '<span class="tag tag-factor">' + factorLabel(item.factor) + '</span>' : '') +
+              '</div></div></div>';
+          }).join('') +
+        '</div></div>';
+    }).join('');
+
+    updateProgress();
+    document.getElementById('progressContainer').classList.add('active');
+  }
+
+  function togglePhase(headerEl) { headerEl.closest('.phase').classList.toggle('open'); }
+
+  function toggleItem(phaseId, itemId, checked) {
+    if (!currentData) return;
+    for (var p = 0; p < currentData.phases.length; p++) {
+      if (currentData.phases[p].id === phaseId) {
+        for (var i = 0; i < currentData.phases[p].items.length; i++) {
+          if (currentData.phases[p].items[i].id === itemId) { currentData.phases[p].items[i].done = checked; break; }
+        }
+        break;
+      }
+    }
+    var itemEl = document.querySelector('[data-item="' + itemId + '"]');
+    if (itemEl) itemEl.classList.toggle('completed', checked);
+
+    var phaseEl = document.querySelector('[data-phase="' + phaseId + '"]');
+    if (phaseEl) {
+      var phase = currentData.phases.find(function(p) { return p.id === phaseId; });
+      var done = phase.items.filter(function(i) { return i.done; }).length;
+      var total = phase.items.length;
+      phaseEl.querySelector('.phase-progress-mini').innerHTML = '<span class="' + (done === total && total > 0 ? 'done' : '') + '">' + done + '</span>/' + total;
+    }
+    updateProgress();
+    saveState();
+  }
+
+  function updateProgress() {
+    if (!currentData) return;
+    var total = 0, done = 0;
+    currentData.phases.forEach(function(p) { p.items.forEach(function(i) { total++; if (i.done) done++; }); });
+    document.getElementById('progressDone').textContent = done;
+    document.getElementById('progressTotal').textContent = total;
+    document.getElementById('progressFill').style.width = (total ? Math.round((done / total) * 100) : 0) + '%';
+  }
+
+  // ═══════════════════════════════════════════
+  // INIT
+  // ═══════════════════════════════════════════
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initializeLocationDetection); }
+  else { initializeLocationDetection(); }
+
+  // Public API
+  return {
+    loadJSON: loadJSON, loadSample: loadSample, switchClient: switchClient,
+    exportJSON: exportJSON, exportCSV: exportCSV, togglePhase: togglePhase, toggleItem: toggleItem,
+    getState: function() { return { currentData: currentData, locationId: currentLocationId }; },
+    reset: function() { localStorage.removeItem(getStorageKey()); location.reload(); }
+  };
+})();
+</script>
+</body>
+</html>
