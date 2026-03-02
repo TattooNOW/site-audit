@@ -682,9 +682,39 @@
 
       if (!locationId) return <div className="container"><h2>Missing location parameter</h2><p>Add ?locationId=YOUR_GHL_LOCATION_ID to the URL</p></div>;
       if (loading) return <div className="container" style={{textAlign:'center',paddingTop:'4rem'}}><h2>Loading dashboard...</h2></div>;
-      if (error) return <div className="container">Error: {error.message}</div>;
-      if (!site) return <div className="container">No site found for location: {locationId}</div>;
-      if (audits.length === 0) return <div className="container"><h1>{site.business_name}</h1><p>{site.domain}</p><p>No audits have been run yet.</p></div>;
+
+      /* ── Empty / No-Data State — friendly CTA ─────────── */
+      if (error || !site || audits.length === 0) {
+        return (
+          <div className="container" style={{textAlign:'center', paddingTop:'4rem', maxWidth:'600px'}}>
+            <div style={{fontSize:'4rem', marginBottom:'1rem'}}>&#x1F50D;</div>
+            <h1 style={{margin:'0 0 0.5rem 0'}}>SEO & GEO Audit Dashboard</h1>
+            <p style={{color:'#888', fontSize:'1.1rem', margin:'0 0 2rem 0'}}>
+              {site ? site.business_name : 'Your business'} doesn't have an audit report yet.
+            </p>
+            <a
+              href="https://tattoonow.com/contact"
+              target="_blank"
+              rel="noopener"
+              style={{
+                display:'inline-block', padding:'0.9rem 2.5rem', background:'#EA9320', color:'#000',
+                fontFamily:'Roboto Slab, serif', fontWeight:700, fontSize:'1.1rem',
+                textDecoration:'none', borderRadius:'6px', transition:'background 0.2s'
+              }}
+              onMouseOver={e => e.currentTarget.style.background='#d4830f'}
+              onMouseOut={e => e.currentTarget.style.background='#EA9320'}
+            >
+              Request Your Free Audit
+            </a>
+            <p style={{color:'#555', fontSize:'0.85rem', marginTop:'1.5rem'}}>
+              We'll analyze your site across SEO, AI discoverability, GEO signals, directory listings, and more.
+            </p>
+            <footer style={{marginTop:'3rem', padding:'1rem 0', borderTop:'1px solid #222', fontSize:'0.8rem', color:'#666'}}>
+              Powered by <a href="https://tattoonow.com" target="_blank">TattooNOW</a>
+            </footer>
+          </div>
+        );
+      }
 
       const latest = audits[audits.length - 1];
       const scores = latest.scores || {};
