@@ -701,15 +701,18 @@
     function App() {
       const params = new URLSearchParams(window.location.search);
       const locationId = params.get('locationId');
-      // GHL merge fields: {{location.website}}, {{location.address}}, {{location.phone}}
-      // Also try fullAddress, city+state+postalCode as fallbacks
-      const rawAddress = params.get('address') || params.get('fullAddress') || '';
+      // GHL merge fields: address, city, state, postalCode are separate fields
+      // Build full address from parts: {{location.address}}, {{location.city}}, {{location.state}} {{location.postalCode}}
+      const addrParts = [
+        params.get('address'),
+        [params.get('city'), params.get('state')].filter(Boolean).join(', '),
+        params.get('postalCode')
+      ].filter(Boolean).join(', ');
       const urlDefaults = {
         website: params.get('website') || '',
-        address: rawAddress || [params.get('city'), params.get('state'), params.get('postalCode')].filter(Boolean).join(', '),
+        address: addrParts,
         phone: params.get('phone') || '',
       };
-      console.log('URL params:', Object.fromEntries(params.entries()), 'defaults:', urlDefaults);
 
       const [loading, setLoading] = React.useState(true);
       const [error, setError] = React.useState(null);
