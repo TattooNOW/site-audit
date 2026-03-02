@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TattooNOW Audit Dashboard</title>
+  <!-- CDN imports: React, PropTypes, Recharts, Supabase JS -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <script>window.PropTypes = window.PropTypes || window.propTypes;</script>
+  <script src="https://cdn.jsdelivr.net/npm/recharts@2/umd/Recharts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    body, html { margin:0; padding:0; background:#0a0a0a; color:#fafafa; font-family:'Roboto',sans-serif; }
+    h1,h2,h3,h4,h5 { font-family:'Roboto Slab',serif; }
+    a { color:#EA9320; }
+    .container { padding:20px; max-width:1200px; margin:0 auto; }
+    table { width:100%; border-collapse:collapse; }
+    table th { text-align:left; padding:8px 12px; border-bottom:2px solid #333; }
+    table td { padding:6px 12px; border-bottom:1px solid #222; }
+    .score-card { flex:1; background:#1a1a1a; padding:1.5rem; border-radius:8px; text-align:center; }
+    .score-card h3 { margin:0 0 0.5rem 0; font-size:0.9rem; text-transform:uppercase; letter-spacing:1px; color:#888; }
+    .score-card .value { font-size:2.5rem; font-weight:700; }
+    .score-card .delta { font-size:1rem; margin-top:0.25rem; }
+
+    /* Tab navigation */
+    .tab-bar { display:flex; gap:0; border-bottom:2px solid #333; margin-bottom:2rem; overflow-x:auto; }
+    .tab-btn {
+      padding:0.75rem 1.5rem; background:none; border:none; border-bottom:3px solid transparent;
+      color:#888; font-family:'Roboto',sans-serif; font-size:0.95rem; font-weight:500;
+      cursor:pointer; white-space:nowrap; transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover { color:#ccc; }
+    .tab-btn.active { color:#EA9320; border-bottom-color:#EA9320; }
+    .tab-btn .badge {
+      display:inline-block; margin-left:0.5rem; padding:0.1rem 0.5rem; border-radius:10px;
+      font-size:0.75rem; font-weight:700; background:#333; color:#aaa;
+    }
+    .tab-btn.active .badge { background:#EA9320; color:#000; }
+  </style>
+</head>
+<body>
+  <div id="root">Loading...</div>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const SUPABASE_URL = 'https://dwoqhaaugczqsymfirqu.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_YYTjG-yaVaj7bpfKyIJupw_ATKZvk0N';
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    /* =========================================================
+       Helper functions
+    ========================================================= */
+    const getDeltaArrow = (val) => val > 0 ? '\u25B2' : val < 0 ? '\u25BC' : '\u2014';
+    const deltaColor = (val) => val > 0 ? '#4ade80' : val < 0 ? '#f87171' : '#666';
+    const severityColor = (s) => s === 'critical' ? '#ef4444' : s === 'high' ? '#f87171' : s === 'medium' ? '#fbbf24' : s === 'low' ? '#60a5fa' : '#888';
+
+    const statusIcon = (s) => {
+      if (s === 'listed') return '\u2705';
+      if (s === 'needs_fix' || s === 'needs_claim') return '\u26A0\uFE0F';
+      return '\u274C';
+    };
+    const statusLabel = (s) => {
+      if (s === 'listed') return 'Listed';
+      if (s === 'needs_fix') return 'Needs Fix';
+      if (s === 'needs_claim') return 'Needs Claim';
+      return 'Not Listed';
+    };
+    const statusRowBg = (s) => {
+      if (s === 'listed') return 'rgba(74, 222, 128, 0.08)';
+      if (s === 'needs_fix' || s === 'needs_claim') return 'rgba(251, 191, 36, 0.08)';
+      if (s === 'not_listed') return 'rgba(248, 113, 113, 0.08)';
+      return 'transparent';
+    };
+    const priorityColor = (p) => {
+      if (p === 'P0') return '#ef4444';
+      if (p === 'P1') return '#fbbf24';
+      if (p === 'P2') return '#60a5fa';
+      return '#888';
+    };
+
+    /* =========================================================
+       Tab: Overview
+    ========================================================= */
+    function OverviewTab({ scores, delta, chartData, quickWins, severityColor }) {
+      const seoScore = scores.seo?.score ?? '\u2014';
+      const aiScore = scores.ai_discoverability?.score ?? '\u2014';
+      const geoScore = scores.geo_readiness?.score ?? '\u2014';
+
+      return (
+        <div>
+          {/* Overall Score */}
+          <section style={{marginBottom:'2rem', textAlign:'center'}}>
+            <div style={{fontSize:'5rem', fontWeight:700, color: deltaColor(delta.overall)}}>
+              {scores.overall}
+            </div>
+            <div style={{fontSize:'1.2rem', color: deltaColor(delta.overall)}}>
+              {getDeltaArrow(delta.overall)} {delta.overall != null ? (delta.overall > 0 ? '+' : '') + delta.overall + ' pts' : 'Baseline'}
+            </div>
+          </section>
+
+          {/* Score Cards */}
+          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem'}}>
+            <div className="score-card">
+              <h3>SEO (Layer 1)</h3>
+              <div className="value">{seoScore}</div>
+              <div className="delta" style={{color: deltaColor(delta.seo)}}>{getDeltaArrow(delta.seo)} {delta.seo != null ? (delta.seo > 0 ? '+' : '') + delta.seo : ''}</div>
+            </div>
+            <div className="score-card">
+              <h3>AI Discovery (Layer 2)</h3>
+              <div className="value">{aiScore}</div>
+              <div className="delta" style={{color: deltaColor(delta.ai_discoverability)}}>{getDeltaArrow(delta.ai_discoverability)} {delta.ai_discoverability != null ? (delta.ai_discoverability > 0 ? '+' : '') + delta.ai_discoverability : ''}</div>
+            </div>
+            <div className="score-card">
+              <h3>GEO Ready (Layer 3)</h3>
+              <div className="value">{geoScore}</div>
+              <div className="delta" style={{color: deltaColor(delta.geo_readiness)}}>{getDeltaArrow(delta.geo_readiness)} {delta.geo_readiness != null ? (delta.geo_readiness > 0 ? '+' : '') + delta.geo_readiness : ''}</div>
+            </div>
+          </section>
+
+          {/* Timeline Chart */}
+          <section style={{marginBottom:'2rem'}}>
+            <h2>Score Timeline</h2>
+            <Recharts.ResponsiveContainer width="100%" height={300}>
+              <Recharts.LineChart data={chartData} margin={{top:5, right:20, left:10, bottom:5}}>
+                <Recharts.CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <Recharts.XAxis dataKey="date" stroke="#888" />
+                <Recharts.YAxis domain={[0,100]} stroke="#888" />
+                <Recharts.Tooltip contentStyle={{background:'#1a1a1a', border:'1px solid #333'}} />
+                <Recharts.Legend />
+                <Recharts.Line type="monotone" dataKey="Overall" stroke="#a78bfa" strokeWidth={2} dot={{r:4}} />
+                <Recharts.Line type="monotone" dataKey="SEO" stroke="#4ade80" strokeWidth={2} dot={{r:4}} />
+                <Recharts.Line type="monotone" dataKey="AI" stroke="#fbbf24" strokeWidth={2} dot={{r:4}} />
+                <Recharts.Line type="monotone" dataKey="GEO" stroke="#f97316" strokeWidth={2} dot={{r:4}} />
+              </Recharts.LineChart>
+            </Recharts.ResponsiveContainer>
+          </section>
+
+          {/* Quick Wins */}
+          {quickWins.length > 0 && (
+            <section style={{marginBottom:'2rem', background:'#1a1a1a', padding:'1.5rem', borderRadius:'8px', border:'1px solid #333'}}>
+              <h2 style={{marginTop:0}}>Quick Wins ({quickWins.length})</h2>
+              <p style={{color:'#888', marginTop:0}}>High-impact fixes under 15 minutes</p>
+              {quickWins.map(f => (
+                <div key={f.id} style={{marginBottom:'1rem', paddingBottom:'1rem', borderBottom:'1px solid #222'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                    <strong style={{color: severityColor(f.severity)}}>[{f.severity.toUpperCase()}] {f.title}</strong>
+                    <span style={{color:'#888', fontSize:'0.85rem'}}>{f.effort_minutes} min &bull; {f.page}</span>
+                  </div>
+                  <div style={{color:'#aaa', fontSize:'0.9rem', marginTop:'0.25rem'}}>{f.fix}</div>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+      );
+    }
+
+    /* =========================================================
+       Tab: Findings
+    ========================================================= */
+    function FindingsTab({ latestFindings, auditDate }) {
+      const [filterSeverity, setFilterSeverity] = React.useState('all');
+      const [filterStatus, setFilterStatus] = React.useState('all');
+
+      const filtered = latestFindings
+        .filter(f => filterSeverity === 'all' || f.severity === filterSeverity)
+        .filter(f => filterStatus === 'all' || f.status === filterStatus)
+        .sort((a, b) => {
+          const order = {critical:0, high:1, medium:2, low:3};
+          return (order[a.severity]||4) - (order[b.severity]||4);
+        });
+
+      return (
+        <div>
+          <div style={{display:'flex', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap'}}>
+            <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}
+              style={{background:'#1a1a1a', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.8rem', borderRadius:'4px'}}>
+              <option value="all">All Severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              style={{background:'#1a1a1a', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.8rem', borderRadius:'4px'}}>
+              <option value="all">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="fixed">Fixed</option>
+              <option value="in_progress">In Progress</option>
+            </select>
+            <span style={{color:'#888', alignSelf:'center', fontSize:'0.85rem'}}>{filtered.length} finding{filtered.length !== 1 ? 's' : ''}</span>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Category</th><th>Page</th><th>Status</th><th>Open Since</th></tr></thead>
+            <tbody>
+            {filtered.map(f => {
+              const openSince = f.still_open_since || f.first_detected;
+              const age = Math.floor((new Date() - new Date(openSince)) / (1000*60*60*24));
+              return (
+                <tr key={f.id} style={{color: severityColor(f.severity)}}>
+                  <td style={{fontFamily:'monospace'}}>{f.finding_id}</td>
+                  <td>{f.severity}</td>
+                  <td>{f.title}</td>
+                  <td>{f.category}</td>
+                  <td>{f.page}</td>
+                  <td>{f.status}</td>
+                  <td>{age}d</td>
+                </tr>
+              );
+            })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    /* =========================================================
+       Tab: GEO Signals
+    ========================================================= */
+    function GeoTab({ latestGeo }) {
+      if (latestGeo.length === 0) {
+        return <p style={{color:'#888'}}>No GEO/AEO signals have been recorded yet. Run a GEO audit to populate this tab.</p>;
+      }
+
+      const passing = latestGeo.filter(g => g.signal_value).length;
+      const total = latestGeo.length;
+      const pct = Math.round((passing / total) * 100);
+
+      return (
+        <div>
+          <div style={{display:'flex', gap:'1.5rem', marginBottom:'2rem', alignItems:'center'}}>
+            <div className="score-card" style={{maxWidth:'200px'}}>
+              <h3>GEO Score</h3>
+              <div className="value">{pct}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{passing}/{total} signals passing</div>
+            </div>
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:'0.75rem'}}>
+            {latestGeo.map(g => (
+              <div key={g.id} style={{background:'#1a1a1a', padding:'1rem', borderRadius:'8px', borderLeft: g.signal_value ? '3px solid #4ade80' : '3px solid #f87171'}}>
+                <div style={{fontWeight:500, textTransform:'capitalize'}}>{g.signal_name.replace(/_/g, ' ')}</div>
+                <div style={{color: g.signal_value ? '#4ade80' : '#f87171', fontSize:'0.85rem', margin:'0.25rem 0'}}>{g.signal_value ? '\u2713 Present' : '\u2717 Missing'}</div>
+                {g.details && <div style={{color:'#aaa', fontSize:'0.8rem'}}>{g.details}</div>}
+                {g.recommendation && <div style={{color:'#888', fontSize:'0.8rem', marginTop:'0.5rem', fontStyle:'italic'}}>{g.recommendation}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* =========================================================
+       Tab: AI Mentions
+    ========================================================= */
+    function AITab({ aiMentions }) {
+      if (aiMentions.length === 0) {
+        return <p style={{color:'#888'}}>AI probes not yet run. Layer 2 data will appear after n8n probes execute.</p>;
+      }
+
+      return (
+        <div>
+          <table>
+            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP Accurate</th><th>Sentiment</th></tr></thead>
+            <tbody>
+              {aiMentions.map(m => (
+                <tr key={m.id}>
+                  <td style={{textTransform:'capitalize'}}>{m.engine}</td>
+                  <td>{m.query}</td>
+                  <td style={{color: m.mentioned ? '#4ade80' : '#f87171'}}>{m.mentioned ? 'Yes' : 'No'}</td>
+                  <td style={{color: m.nap_accurate ? '#4ade80' : m.nap_accurate === false ? '#f87171' : '#888'}}>{m.nap_accurate == null ? '\u2014' : m.nap_accurate ? 'Yes' : 'No'}</td>
+                  <td>{m.sentiment || '\u2014'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    /* =========================================================
+       Tab: Directory Listings
+    ========================================================= */
+    function DirectoryTab({ listings, site }) {
+      const [filterStatus, setFilterStatus] = React.useState('all');
+      const [filterTier, setFilterTier] = React.useState('all');
+
+      if (listings.length === 0) {
+        return (
+          <div style={{textAlign:'center', padding:'3rem 1rem'}}>
+            <h3 style={{color:'#888'}}>No directory audit has been run yet</h3>
+            <p style={{color:'#666', maxWidth:'500px', margin:'0 auto'}}>
+              Run a directory listing audit to see where {site.business_name} is listed,
+              find NAP inconsistencies, and get a prioritized action plan.
+            </p>
+          </div>
+        );
+      }
+
+      const filtered = listings
+        .filter(l => filterStatus === 'all' || l.status === filterStatus)
+        .filter(l => filterTier === 'all' || l.tier === parseInt(filterTier));
+
+      // Scorecard stats
+      const listed = listings.filter(l => l.status === 'listed').length;
+      const needsAttention = listings.filter(l => l.status === 'needs_fix' || l.status === 'needs_claim').length;
+      const notListed = listings.filter(l => l.status === 'not_listed').length;
+      const total = listings.length;
+      const napIssues = listings.filter(l => l.nap_issues && l.nap_issues.length > 0);
+      const bonusPlatforms = listings.filter(l => l.is_bonus);
+
+      // Group by tier for display
+      const tierNames = { 1: 'Critical', 2: 'High Impact', 3: 'Industry', 4: 'Secondary', 5: 'Regional' };
+
+      return (
+        <div>
+          {/* Scorecard */}
+          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
+            <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
+              <h3>Listed</h3>
+              <div className="value" style={{color:'#4ade80'}}>{listed}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{total > 0 ? Math.round(listed/total*100) : 0}%</div>
+            </div>
+            <div className="score-card" style={{borderTop:'3px solid #fbbf24'}}>
+              <h3>Needs Attention</h3>
+              <div className="value" style={{color:'#fbbf24'}}>{needsAttention}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{total > 0 ? Math.round(needsAttention/total*100) : 0}%</div>
+            </div>
+            <div className="score-card" style={{borderTop:'3px solid #f87171'}}>
+              <h3>Not Listed</h3>
+              <div className="value" style={{color:'#f87171'}}>{notListed}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{total > 0 ? Math.round(notListed/total*100) : 0}%</div>
+            </div>
+            <div className="score-card" style={{borderTop:'3px solid #EA9320'}}>
+              <h3>Total Checked</h3>
+              <div className="value">{total}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{napIssues.length} NAP issue{napIssues.length !== 1 ? 's' : ''}</div>
+            </div>
+          </section>
+
+          {/* NAP Issues (P0/P1 only) */}
+          {napIssues.filter(l => l.nap_priority === 'P0' || l.nap_priority === 'P1').length > 0 && (
+            <section style={{marginBottom:'2rem', background:'#1a1a1a', padding:'1.5rem', borderRadius:'8px', border:'1px solid #ef4444'}}>
+              <h3 style={{marginTop:0, color:'#ef4444'}}>NAP Consistency Issues</h3>
+              <table>
+                <thead><tr><th>Platform</th><th>Name Listed</th><th>Address Listed</th><th>Issues</th><th>Priority</th><th>Link</th></tr></thead>
+                <tbody>
+                  {napIssues
+                    .filter(l => l.nap_priority === 'P0' || l.nap_priority === 'P1')
+                    .sort((a, b) => (a.nap_priority || 'P9').localeCompare(b.nap_priority || 'P9'))
+                    .map(l => (
+                      <tr key={l.id + '-nap'}>
+                        <td style={{fontWeight:500}}>{l.platform.replace(/_/g, ' ')}</td>
+                        <td>{l.name_listed || '\u2014'}</td>
+                        <td>{l.address_listed || '\u2014'}</td>
+                        <td>{(l.nap_issues || []).map(i => i.replace(/_/g, ' ')).join(', ')}</td>
+                        <td style={{color: priorityColor(l.nap_priority), fontWeight:700}}>{l.nap_priority}</td>
+                        <td>{l.listing_url ? <a href={l.listing_url} target="_blank" rel="noopener">View</a> : '\u2014'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {/* Filters */}
+          <div style={{display:'flex', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap'}}>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              style={{background:'#1a1a1a', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.8rem', borderRadius:'4px'}}>
+              <option value="all">All Statuses</option>
+              <option value="listed">Listed</option>
+              <option value="needs_fix">Needs Fix</option>
+              <option value="needs_claim">Needs Claim</option>
+              <option value="not_listed">Not Listed</option>
+            </select>
+            <select value={filterTier} onChange={e => setFilterTier(e.target.value)}
+              style={{background:'#1a1a1a', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.8rem', borderRadius:'4px'}}>
+              <option value="all">All Tiers</option>
+              <option value="1">Tier 1: Critical</option>
+              <option value="2">Tier 2: High Impact</option>
+              <option value="3">Tier 3: Industry</option>
+              <option value="4">Tier 4: Secondary</option>
+              <option value="5">Tier 5: Regional</option>
+            </select>
+            <span style={{color:'#888', alignSelf:'center', fontSize:'0.85rem'}}>{filtered.length} platform{filtered.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {/* Directory Table */}
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Platform</th>
+                <th>Category</th>
+                <th>Tier</th>
+                <th>Claimed</th>
+                <th>Cost</th>
+                <th>Notes</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered
+                .sort((a, b) => a.tier - b.tier || a.platform.localeCompare(b.platform))
+                .map(l => (
+                  <tr key={l.id} style={{background: statusRowBg(l.status)}}>
+                    <td style={{whiteSpace:'nowrap'}}>{statusIcon(l.status)} {statusLabel(l.status)}</td>
+                    <td style={{fontWeight:500}}>{l.platform.replace(/_/g, ' ')}</td>
+                    <td style={{textTransform:'capitalize', color:'#888'}}>{(l.platform_category || '').replace(/_/g, ' ')}</td>
+                    <td style={{color:'#888'}}>{tierNames[l.tier] || l.tier}{l.is_bonus ? ' *' : ''}</td>
+                    <td>{l.is_claimed == null ? '\u2014' : l.is_claimed ? '\u2713' : '\u2717'}</td>
+                    <td>{l.cost_tier || 'FREE'}</td>
+                    <td style={{color:'#aaa', fontSize:'0.85rem', maxWidth:'300px'}}>{l.notes || '\u2014'}</td>
+                    <td>{l.listing_url ? <a href={l.listing_url} target="_blank" rel="noopener">View</a> : '\u2014'}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+
+          {/* Bonus platforms callout */}
+          {bonusPlatforms.length > 0 && (
+            <section style={{marginTop:'2rem', background:'#1a1a1a', padding:'1rem 1.5rem', borderRadius:'8px', borderLeft:'3px solid #EA9320'}}>
+              <h4 style={{marginTop:0, color:'#EA9320'}}>Bonus Platforms Discovered ({bonusPlatforms.length})</h4>
+              <p style={{color:'#888', fontSize:'0.85rem', marginTop:0}}>Found during audit, not in master checklist</p>
+              <div style={{display:'flex', flexWrap:'wrap', gap:'0.5rem'}}>
+                {bonusPlatforms.map(l => (
+                  <span key={l.id} style={{background:'#222', padding:'0.25rem 0.75rem', borderRadius:'4px', fontSize:'0.85rem'}}>
+                    {statusIcon(l.status)} {l.platform.replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      );
+    }
+
+    /* =========================================================
+       Main App
+    ========================================================= */
+    function App() {
+      const params = new URLSearchParams(window.location.search);
+      const locationId = params.get('locationId');
+
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [site, setSite] = React.useState(null);
+      const [audits, setAudits] = React.useState([]);
+      const [findings, setFindings] = React.useState([]);
+      const [geoSignals, setGeoSignals] = React.useState([]);
+      const [aiMentions, setAiMentions] = React.useState([]);
+      const [directoryListings, setDirectoryListings] = React.useState([]);
+      const [activeTab, setActiveTab] = React.useState('overview');
+
+      React.useEffect(() => {
+        if (!locationId) { setLoading(false); return; }
+        let canceled = false;
+
+        (async () => {
+          try {
+            // 1. Fetch site
+            const { data: siteData, error: siteErr } = await db
+              .from('sites').select('*')
+              .eq('ghl_location_id', locationId).single();
+            if (siteErr) throw siteErr;
+            if (canceled) return;
+            setSite(siteData);
+
+            // 2. Fetch everything in parallel
+            const [auditsRes, findingsRes, geoRes, aiRes, dirRes] = await Promise.all([
+              db.from('audits').select('*').eq('site_id', siteData.id).order('audit_date', { ascending: true }),
+              db.from('findings').select('*').eq('site_id', siteData.id),
+              db.from('geo_signals').select('*').eq('site_id', siteData.id),
+              db.from('ai_mentions').select('*').eq('site_id', siteData.id),
+              db.from('directory_listings').select('*').eq('site_id', siteData.id),
+            ]);
+            if (canceled) return;
+
+            if (auditsRes.error) throw auditsRes.error;
+            setAudits(auditsRes.data || []);
+            setFindings(findingsRes.data || []);
+            setGeoSignals(geoRes.data || []);
+            setAiMentions(aiRes.data || []);
+            // directory_listings table might not exist yet — handle gracefully
+            setDirectoryListings(dirRes.data || []);
+          } catch (e) {
+            // If the error is just the directory_listings table not existing, don't crash
+            if (e.message && e.message.includes('directory_listings')) {
+              console.warn('directory_listings table not found, skipping');
+              setDirectoryListings([]);
+            } else {
+              console.error('Dashboard load error:', e);
+              if (!canceled) setError(e);
+              return;
+            }
+          } finally {
+            if (!canceled) setLoading(false);
+          }
+        })();
+
+        return () => { canceled = true; };
+      }, [locationId]);
+
+      if (!locationId) {
+        return <div className="container"><h2>Missing location parameter</h2><p>Add ?locationId=YOUR_GHL_LOCATION_ID to the URL</p></div>;
+      }
+      if (loading) return <div className="container" style={{textAlign:'center', paddingTop:'4rem'}}><h2>Loading dashboard...</h2></div>;
+      if (error) return <div className="container">Error: {error.message}</div>;
+      if (!site) return <div className="container">No site found for location: {locationId}</div>;
+      if (audits.length === 0) {
+        return <div className="container">
+          <h1>{site.business_name}</h1>
+          <p>{site.domain}</p>
+          <p>No audits have been run yet.</p>
+        </div>;
+      }
+
+      const latest = audits[audits.length - 1];
+      const scores = latest.scores || {};
+      const delta = latest.delta || {};
+
+      const chartData = audits.map(a => ({
+        date: a.audit_date,
+        Overall: a.scores?.overall ?? 0,
+        SEO: a.scores?.seo?.score ?? 0,
+        AI: a.scores?.ai_discoverability?.score ?? 0,
+        GEO: a.scores?.geo_readiness?.score ?? 0,
+      }));
+
+      const latestFindings = findings.filter(f => f.audit_id === latest.id);
+      const latestGeo = geoSignals.filter(g => g.audit_id === latest.id);
+      const quickWins = latestFindings.filter(f => f.effort_minutes <= 15 && f.impact === 'high' && f.status === 'open');
+
+      // Badge counts
+      const openFindings = latestFindings.filter(f => f.status === 'open').length;
+      const dirNeedsAttention = directoryListings.filter(l => l.status !== 'listed').length;
+
+      const tabs = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'findings', label: 'Findings', badge: openFindings || null },
+        { id: 'geo', label: 'GEO Signals' },
+        { id: 'ai', label: 'AI Mentions' },
+        { id: 'directories', label: 'Directory Listings', badge: dirNeedsAttention || null },
+      ];
+
+      return (
+        <div className="container">
+          <header style={{marginBottom:'1.5rem'}}>
+            <h1 style={{margin:'0 0 0.25rem 0'}}>{site.business_name}</h1>
+            <p style={{margin:0, color:'#888'}}>{site.domain} &bull; Last audit: {latest.audit_date}</p>
+          </header>
+
+          {/* Tab Bar */}
+          <nav className="tab-bar">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+                {t.badge != null && <span className="badge">{t.badge}</span>}
+              </button>
+            ))}
+          </nav>
+
+          {/* Tab Content */}
+          {activeTab === 'overview' && (
+            <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} severityColor={severityColor} />
+          )}
+          {activeTab === 'findings' && (
+            <FindingsTab latestFindings={latestFindings} auditDate={latest.audit_date} />
+          )}
+          {activeTab === 'geo' && (
+            <GeoTab latestGeo={latestGeo} />
+          )}
+          {activeTab === 'ai' && (
+            <AITab aiMentions={aiMentions} />
+          )}
+          {activeTab === 'directories' && (
+            <DirectoryTab listings={directoryListings} site={site} />
+          )}
+
+          <footer style={{marginTop:'2rem', padding:'1rem 0', borderTop:'1px solid #222', fontSize:'0.8rem', color:'#666'}}>
+            Powered by <a href="https://tattoonow.com" target="_blank">TattooNOW</a> &bull; Site Audit System v1.0
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
