@@ -878,11 +878,51 @@
 
     /* ── Tab: AI Mentions ────────────────────────────────── */
     function AITab({ aiMentions }) {
-      if (aiMentions.length === 0) return <p style={{color:'#888'}}>AI probes not yet run. Layer 2 data will appear after n8n probes execute.</p>;
+      if (aiMentions.length === 0) return <p style={{color:'#888'}}>AI probes not yet run. Layer 2 data will appear after AI probes execute.</p>;
+
+      const total = aiMentions.length;
+      const mentioned = aiMentions.filter(m => m.mentioned).length;
+      const aiPct = total > 0 ? Math.round(mentioned / total * 100) : 0;
+      const probeDate = aiMentions[0]?.probe_date || aiMentions[0]?.created_at?.split('T')[0] || '';
+      const probeTime = aiMentions[0]?.created_at ? new Date(aiMentions[0].created_at).toLocaleTimeString() : '';
+
+      // Engine breakdown
+      const engines = [...new Set(aiMentions.map(m => m.engine))];
+      const byEngine = engines.map(e => {
+        const probes = aiMentions.filter(m => m.engine === e);
+        return { engine: e, total: probes.length, mentioned: probes.filter(m => m.mentioned).length };
+      });
+
+      // Collect all competitors mentioned across probes
+      const allCompetitors = {};
+      aiMentions.forEach(m => {
+        if (m.competitors && Array.isArray(m.competitors)) {
+          m.competitors.forEach(c => { allCompetitors[c] = (allCompetitors[c] || 0) + 1; });
+        }
+      });
+      const competitorList = Object.entries(allCompetitors).sort((a,b) => b[1] - a[1]);
+
       return (
         <div>
+          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap', alignItems:'flex-start'}}>
+            <div className="score-card" style={{borderTop:`3px solid ${aiPct >= 60 ? '#4ade80' : aiPct >= 30 ? '#fbbf24' : '#f87171'}`}}>
+              <h3>AI Score</h3>
+              <div className="value" style={{color: aiPct >= 60 ? '#4ade80' : aiPct >= 30 ? '#fbbf24' : '#f87171'}}>{aiPct}%</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{mentioned}/{total} probes</div>
+            </div>
+            {byEngine.map(e => (
+              <div key={e.engine} className="score-card" style={{borderTop:'3px solid #555'}}>
+                <h3 style={{textTransform:'capitalize'}}>{e.engine}</h3>
+                <div className="value">{e.mentioned}<span style={{fontSize:'1rem', color:'#888'}}>/{e.total}</span></div>
+                <div style={{color:'#888', fontSize:'0.85rem'}}>{Math.round(e.mentioned/e.total*100)}% found</div>
+              </div>
+            ))}
+          </section>
+
+          {probeDate && <p style={{color:'#666', fontSize:'0.8rem', marginBottom:'1rem'}}>Probed: {probeDate}{probeTime ? ` at ${probeTime}` : ''}</p>}
+
           <table>
-            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP Accurate</th><th>Sentiment</th></tr></thead>
+            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP Accurate</th><th>Sentiment</th><th>Also Mentioned</th></tr></thead>
             <tbody>
               {aiMentions.map(m => (
                 <tr key={m.id} style={{background: m.mentioned?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
@@ -891,10 +931,24 @@
                   <td style={{color: m.mentioned?'#4ade80':'#f87171'}}>{m.mentioned?'Yes':'No'}</td>
                   <td style={{color: m.nap_accurate?'#4ade80':m.nap_accurate===false?'#f87171':'#888'}}>{m.nap_accurate==null?'\u2014':m.nap_accurate?'Yes':'No'}</td>
                   <td>{m.sentiment||'\u2014'}</td>
+                  <td style={{fontSize:'0.8rem', color:'#aaa', maxWidth:'200px'}}>{m.competitors && m.competitors.length > 0 ? m.competitors.join(', ') : '\u2014'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {competitorList.length > 0 && (
+            <section className="card" style={{marginTop:'1.5rem'}}>
+              <h3 style={{marginTop:0}}>Competitors Appearing in AI Results</h3>
+              <div style={{display:'flex', gap:'0.5rem', flexWrap:'wrap'}}>
+                {competitorList.map(([name, count]) => (
+                  <span key={name} className="pill" style={{background:'rgba(248,113,113,0.15)', color:'#f9a8a8'}}>
+                    {name} ({count}x)
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       );
     }
