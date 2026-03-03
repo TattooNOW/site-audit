@@ -778,26 +778,94 @@
     function GeoTab({ latestGeo }) {
       if (latestGeo.length === 0) return <p style={{color:'#888'}}>No GEO/AEO signals recorded. Run a full audit to populate.</p>;
       const passing = latestGeo.filter(g => g.signal_value).length;
+      const failing = latestGeo.length - passing;
       const pct = Math.round((passing/latestGeo.length)*100);
+
+      // Group signals by type
+      const groupMap = {
+        local_business_schema: 'Schema & Structured Data',
+        faq_schema: 'Schema & Structured Data',
+        city_in_title: 'On-Page Local Signals',
+        city_in_h1: 'On-Page Local Signals',
+        og_tags_present: 'On-Page Local Signals',
+        phone_on_homepage: 'NAP & Contact',
+        address_on_homepage: 'NAP & Contact',
+        gbp_embed: 'NAP & Contact',
+      };
+      const groupOrder = ['Schema & Structured Data', 'On-Page Local Signals', 'NAP & Contact'];
+      const groupColors = {
+        'Schema & Structured Data': '#a78bfa',
+        'On-Page Local Signals': '#fbbf24',
+        'NAP & Contact': '#60a5fa',
+      };
+
+      const grouped = {};
+      latestGeo.forEach(g => {
+        const group = groupMap[g.signal_name] || 'Other';
+        if (!grouped[group]) grouped[group] = [];
+        grouped[group].push(g);
+      });
+
+      const sortedGroups = groupOrder.filter(g => grouped[g]).concat(
+        Object.keys(grouped).filter(g => !groupOrder.includes(g))
+      );
 
       return (
         <div>
-          <div style={{display:'flex', gap:'1.5rem', marginBottom:'2rem', alignItems:'center'}}>
-            <div className="score-card" style={{maxWidth:'200px', borderTop:'3px solid #f97316'}}>
+          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
+            <div className="score-card" style={{borderTop:'3px solid #f97316'}}>
               <h3>GEO Score</h3>
-              <div className="value">{pct}</div>
+              <div className="value" style={{color:'#f97316'}}>{pct}</div>
               <div style={{color:'#888', fontSize:'0.85rem'}}>{passing}/{latestGeo.length} passing</div>
             </div>
-          </div>
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:'0.75rem'}}>
-            {latestGeo.map(g => (
-              <div key={g.id} style={{background:'#1a1a1a', padding:'1rem', borderRadius:'8px', borderLeft: g.signal_value ? '3px solid #4ade80':'3px solid #f87171'}}>
-                <div style={{fontWeight:500, textTransform:'capitalize'}}>{g.signal_name.replace(/_/g,' ')}</div>
-                <div style={{color: g.signal_value?'#4ade80':'#f87171', fontSize:'0.85rem', margin:'0.25rem 0'}}>{g.signal_value ? '\u2713 Present':'\u2717 Missing'}</div>
-                {g.recommendation && <div style={{color:'#888', fontSize:'0.8rem', fontStyle:'italic'}}>{g.recommendation}</div>}
-              </div>
-            ))}
-          </div>
+            <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
+              <h3>Passing</h3>
+              <div className="value" style={{color:'#4ade80'}}>{passing}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>signals detected</div>
+            </div>
+            <div className="score-card" style={{borderTop: failing > 0 ? '3px solid #f87171' : '3px solid #4ade80'}}>
+              <h3>Needs Work</h3>
+              <div className="value" style={{color: failing > 0 ? '#f87171' : '#4ade80'}}>{failing}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{failing > 0 ? 'signals missing' : 'all clear'}</div>
+            </div>
+          </section>
+
+          {sortedGroups.map(groupName => {
+            const signals = grouped[groupName];
+            const groupPass = signals.filter(g => g.signal_value).length;
+            const gc = groupColors[groupName] || '#888';
+
+            return (
+              <section key={groupName} className="card" style={{marginBottom:'1.5rem', border:'1px solid #222'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
+                  <h3 style={{margin:0, color: gc}}>{groupName}</h3>
+                  <span style={{color:'#888', fontSize:'0.85rem'}}>{groupPass}/{signals.length} passing</span>
+                </div>
+                <div style={{display:'flex', flexDirection:'column', gap:'0.75rem'}}>
+                  {signals.map(g => (
+                    <div key={g.id} style={{background:'#111', padding:'1rem', borderRadius:'6px', borderLeft: g.signal_value ? '3px solid #4ade80':'3px solid #f87171'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                        <div style={{fontWeight:600, textTransform:'capitalize', fontSize:'0.95rem'}}>{g.signal_name.replace(/_/g,' ')}</div>
+                        <span className="pill" style={{background: g.signal_value ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)', color: g.signal_value ? '#4ade80' : '#f87171', flexShrink:0}}>
+                          {g.signal_value ? '\u2713 Found' : '\u2717 Missing'}
+                        </span>
+                      </div>
+                      {g.details && (
+                        <div style={{marginTop:'0.5rem', padding:'0.5rem 0.75rem', background:'#0a0a0a', borderRadius:'4px', fontFamily:'monospace', fontSize:'0.8rem', color: g.signal_value ? '#9ca3af' : '#fca5a5', wordBreak:'break-word'}}>
+                          {g.details}
+                        </div>
+                      )}
+                      {g.recommendation && (
+                        <div style={{marginTop:'0.5rem', fontSize:'0.85rem', color:'#d1d5db', lineHeight:'1.4'}}>
+                          <span style={{color:'#fbbf24', fontWeight:600, marginRight:'0.35rem'}}>Fix:</span>{g.recommendation}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       );
     }
