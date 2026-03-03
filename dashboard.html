@@ -921,7 +921,7 @@
                   <td><span className="pill" style={{background:l.priority<=2?'rgba(239,68,68,0.2)':l.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:l.priority<=2?'#f87171':l.priority<=5?'#fbbf24':'#60a5fa'}}>P{l.priority}</span></td>
                   <td style={{textTransform:'capitalize'}}>{(l.link_type||'').replace(/_/g,' ')}</td>
                   <td style={{fontWeight:500}}>{l.title}</td>
-                  <td style={{fontSize:'0.8rem', color:'#aaa'}}>{l.target_url || l.target_page || '\u2014'}</td>
+                  <td style={{fontSize:'0.8rem'}}>{(l.target_url || l.target_page) ? <a href={l.target_url || l.target_page} target="_blank" rel="noopener noreferrer" style={{color:'#EA9320', textDecoration:'none'}}>{(l.target_url || l.target_page).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a> : '\u2014'}</td>
                   <td>{l.estimated_cost || 'Free'}</td>
                   <td style={{textTransform:'capitalize'}}>{l.status || 'pending'}</td>
                 </tr>
@@ -977,6 +977,45 @@
 
       if (listings.length === 0) return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No directory audit run yet</h3><p style={{color:'#666'}}>Run a directory listing audit to populate.</p></div>;
 
+      // Known submit/claim URLs for common platforms
+      const submitUrls = {
+        'google_business_profile': 'https://business.google.com',
+        'google': 'https://business.google.com',
+        'yelp': 'https://biz.yelp.com/signup_redirect',
+        'facebook': 'https://www.facebook.com/pages/create',
+        'apple_maps': 'https://mapsconnect.apple.com',
+        'bing_places': 'https://www.bingplaces.com',
+        'yellow_pages': 'https://adsolutions.yp.com/free-listing',
+        'yellowpages': 'https://adsolutions.yp.com/free-listing',
+        'bbb': 'https://www.bbb.org/get-accredited',
+        'foursquare': 'https://foursquare.com/manage',
+        'mapquest': 'https://www.mapquest.com/my-business',
+        'nextdoor': 'https://nextdoor.com/business',
+        'instagram': 'https://www.instagram.com',
+        'tattoonow': 'https://www.tattoonow.com/join',
+        'tattoodo': 'https://www.tattoodo.com/artists',
+        'tattoofilter': 'https://www.tattoofilter.com/artists/register',
+        'inkmatch': 'https://www.inkmatch.com/for-artists',
+        'tattoo.com': 'https://www.tattoo.com/artists',
+        'hotfrog': 'https://www.hotfrog.com/add-your-business',
+        'manta': 'https://www.manta.com/claim',
+        'superpages': 'https://www.superpages.com/free-listing',
+        'citysearch': 'https://www.citysearch.com',
+        'chamberofcommerce': 'https://www.chamberofcommerce.com/add-your-business',
+        'thumbtack': 'https://www.thumbtack.com/join',
+        'angies_list': 'https://www.angi.com/pro',
+        'angi': 'https://www.angi.com/pro',
+        'painful_pleasures': 'https://www.painfulpleasures.com/tattoo-shops/submit',
+        'tattoo_seo': 'https://www.tattooseo.com/directory/submit',
+        'world_tattoo_gallery': 'https://www.worldtattooportal.com/register',
+      };
+
+      function getSubmitUrl(l) {
+        if (l.submit_url) return l.submit_url;
+        const key = l.platform.toLowerCase().replace(/[\s-]+/g, '_');
+        return submitUrls[key] || null;
+      }
+
       const filtered = listings.filter(l => filterStatus==='all'||l.status===filterStatus).filter(l => filterTier==='all'||l.tier===parseInt(filterTier));
       const listed = listings.filter(l => l.status==='listed').length;
       const needsAtt = listings.filter(l => l.status==='needs_fix'||l.status==='needs_claim').length;
@@ -1006,16 +1045,23 @@
           <table>
             <thead><tr><th>Status</th><th>Platform</th><th>Tier</th><th>Claimed</th><th>Cost</th><th>Link</th></tr></thead>
             <tbody>
-              {filtered.sort((a,b)=>a.tier-b.tier||a.platform.localeCompare(b.platform)).map(l => (
-                <tr key={l.id} style={{background:statusRowBg(l.status)}}>
-                  <td>{statusIcon(l.status)} {statusLabel(l.status)}</td>
-                  <td style={{fontWeight:500}}>{l.platform.replace(/_/g,' ')}</td>
-                  <td style={{color:'#888'}}>{tierNames[l.tier]||l.tier}</td>
-                  <td>{l.is_claimed==null?'\u2014':l.is_claimed?'\u2713':'\u2717'}</td>
-                  <td>{l.cost_tier||'FREE'}</td>
-                  <td>{l.listing_url?<a href={l.listing_url} target="_blank" rel="noopener">View</a>:'\u2014'}</td>
-                </tr>
-              ))}
+              {filtered.sort((a,b)=>a.tier-b.tier||a.platform.localeCompare(b.platform)).map(l => {
+                const claimUrl = getSubmitUrl(l);
+                return (
+                  <tr key={l.id} style={{background:statusRowBg(l.status)}}>
+                    <td>{statusIcon(l.status)} {statusLabel(l.status)}</td>
+                    <td style={{fontWeight:500}}>{l.platform.replace(/_/g,' ')}</td>
+                    <td style={{color:'#888'}}>{tierNames[l.tier]||l.tier}</td>
+                    <td>{l.is_claimed==null?'\u2014':l.is_claimed?'\u2713':'\u2717'}</td>
+                    <td>{l.cost_tier||'FREE'}</td>
+                    <td>
+                      {l.listing_url && <a href={l.listing_url} target="_blank" rel="noopener" style={{color:'#4ade80', marginRight: claimUrl ? '0.5rem' : 0}}>View</a>}
+                      {claimUrl && (l.status !== 'listed') && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#EA9320'}}>{l.status === 'needs_claim' ? 'Claim' : l.status === 'not_listed' ? 'Register' : 'Update'}</a>}
+                      {!l.listing_url && !(claimUrl && l.status !== 'listed') && '\u2014'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
