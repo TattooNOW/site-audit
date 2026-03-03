@@ -654,7 +654,11 @@
       const { sections, total, found, missing, critical_missing } = homepageSections;
       const pct = total ? Math.round(found / total * 100) : 0;
       const importanceOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-      const sorted = [...sections].sort((a, b) => (importanceOrder[a.importance] || 4) - (importanceOrder[b.importance] || 4));
+      const sorted = [...sections].sort((a, b) => {
+        const impDiff = (importanceOrder[a.importance] || 4) - (importanceOrder[b.importance] || 4);
+        if (impDiff !== 0) return impDiff;
+        return (a.found ? 1 : 0) - (b.found ? 1 : 0); // missing first within same importance
+      });
       const impColor = imp => ({ critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#60a5fa' }[imp] || '#888');
 
       return (
@@ -686,11 +690,11 @@
 
           <table>
             <thead>
-              <tr><th>Section</th><th>Status</th><th>Importance</th><th>Recommendation</th></tr>
+              <tr><th>Section</th><th>Status</th><th>Importance</th><th>Notes</th></tr>
             </thead>
             <tbody>
               {sorted.map((s, i) => (
-                <tr key={i} style={{opacity: s.found ? 0.6 : 1}}>
+                <tr key={i} style={{background: s.found ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.08)'}}>
                   <td style={{fontWeight: 500}}>{s.name}</td>
                   <td>
                     <span className="pill" style={{background: s.found ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)', color: s.found ? '#4ade80' : '#f87171'}}>
@@ -702,7 +706,9 @@
                       {s.importance}
                     </span>
                   </td>
-                  <td style={{fontSize:'0.85rem', color:'#aaa', maxWidth:'400px'}}>{s.recommendation || '\u2014'}</td>
+                  <td style={{fontSize:'0.85rem', color: s.found ? '#9ca3af' : '#f9a8a8', maxWidth:'400px'}}>
+                    {s.found ? (s.notes || '\u2713 Detected on page') : (s.recommendation || 'Section not detected')}
+                  </td>
                 </tr>
               ))}
             </tbody>
