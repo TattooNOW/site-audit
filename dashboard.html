@@ -1258,6 +1258,19 @@
       const quickWins = latestFindings.filter(f => f.effort_minutes <= 15 && f.impact === 'high' && f.status === 'open');
       const latestRankMap = rankMaps.length > 0 ? rankMaps[0] : null;
 
+      // Compute AI score from ai_mentions data (overrides stored null)
+      const aiScoreFromMentions = aiMentions.length > 0
+        ? Math.round(aiMentions.filter(m => m.mentioned).length / aiMentions.length * 100)
+        : null;
+      if (aiScoreFromMentions !== null) {
+        if (!scores.ai_discoverability) scores.ai_discoverability = {};
+        scores.ai_discoverability.score = aiScoreFromMentions;
+        // Recalculate overall with AI data: SEO 40% + AI 15% + GEO 45%
+        const seoScore = scores.seo?.score || 0;
+        const geoScore = scores.geo_readiness?.score || 0;
+        scores.overall = Math.round(seoScore * 0.4 + aiScoreFromMentions * 0.15 + geoScore * 0.45);
+      }
+
       const openFindings = latestFindings.filter(f => f.status === 'open').length;
       const dirNeedsAtt = directoryListings.filter(l => l.status !== 'listed').length;
       const pendingLinks = linkChecklist.filter(l => l.status !== 'done').length;
