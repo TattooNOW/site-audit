@@ -922,18 +922,32 @@
           {probeDate && <p style={{color:'#666', fontSize:'0.8rem', marginBottom:'1rem'}}>Probed: {probeDate}{probeTime ? ` at ${probeTime}` : ''}</p>}
 
           <table>
-            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP Accurate</th><th>Sentiment</th><th>Also Mentioned</th></tr></thead>
+            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP</th><th>Sentiment</th><th>Also Mentioned</th></tr></thead>
             <tbody>
-              {aiMentions.map(m => (
-                <tr key={m.id} style={{background: m.mentioned?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
-                  <td style={{textTransform:'capitalize'}}>{m.engine}</td>
-                  <td>{m.query}</td>
-                  <td style={{color: m.mentioned?'#4ade80':'#f87171'}}>{m.mentioned?'Yes':'No'}</td>
-                  <td style={{color: m.nap_accurate?'#4ade80':m.nap_accurate===false?'#f87171':'#888'}}>{m.nap_accurate==null?'\u2014':m.nap_accurate?'Yes':'No'}</td>
-                  <td>{m.sentiment||'\u2014'}</td>
-                  <td style={{fontSize:'0.8rem', color:'#aaa', maxWidth:'200px'}}>{m.competitors && m.competitors.length > 0 ? m.competitors.join(', ') : '\u2014'}</td>
-                </tr>
-              ))}
+              {aiMentions.map(m => {
+                const clip = m.mentioned ? m.mention_text : (m.raw_response ? m.raw_response.substring(0, 200) : null);
+                return (
+                  <React.Fragment key={m.id}>
+                    <tr style={{background: m.mentioned?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)', borderBottom: clip ? 'none' : undefined}}>
+                      <td style={{textTransform:'capitalize'}}>{m.engine}</td>
+                      <td>{m.query}</td>
+                      <td style={{color: m.mentioned?'#4ade80':'#f87171'}}>{m.mentioned?'Yes':'No'}</td>
+                      <td style={{color: m.nap_accurate?'#4ade80':m.nap_accurate===false?'#f87171':'#888'}}>{m.nap_accurate==null?'\u2014':m.nap_accurate?'Yes':'No'}</td>
+                      <td>{m.sentiment||'\u2014'}</td>
+                      <td style={{fontSize:'0.8rem', color: !m.mentioned && m.competitors?.length > 0 ? '#f9a8a8' : '#aaa', maxWidth:'250px', fontWeight: !m.mentioned && m.competitors?.length > 0 ? 500 : 400}}>
+                        {m.competitors && m.competitors.length > 0 ? m.competitors.join(', ') : '\u2014'}
+                      </td>
+                    </tr>
+                    {clip && (
+                      <tr style={{background: m.mentioned?'rgba(74,222,128,0.03)':'rgba(248,113,113,0.04)'}}>
+                        <td colSpan={6} style={{fontSize:'0.75rem', color:'#777', padding:'0.25rem 1rem 0.6rem 1rem', borderTop:'none', fontStyle:'italic'}}>
+                          {clip}{clip.length >= 200 ? '...' : ''}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
 
