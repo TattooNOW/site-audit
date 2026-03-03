@@ -983,6 +983,7 @@
         'google': 'https://business.google.com',
         'yelp': 'https://biz.yelp.com/signup_redirect',
         'facebook': 'https://www.facebook.com/pages/create',
+        'facebook_business': 'https://www.facebook.com/pages/create',
         'apple_maps': 'https://mapsconnect.apple.com',
         'bing_places': 'https://www.bingplaces.com',
         'yellow_pages': 'https://adsolutions.yp.com/free-listing',
@@ -992,6 +993,9 @@
         'mapquest': 'https://www.mapquest.com/my-business',
         'nextdoor': 'https://nextdoor.com/business',
         'instagram': 'https://www.instagram.com',
+        'instagram_business': 'https://www.instagram.com',
+        'tripadvisor': 'https://www.tripadvisor.com/Owners',
+        'linkedin': 'https://www.linkedin.com/company/setup/new/',
         'tattoonow': 'https://www.tattoonow.com/join',
         'tattoodo': 'https://www.tattoodo.com/artists',
         'tattoofilter': 'https://www.tattoofilter.com/artists/register',
@@ -1002,17 +1006,38 @@
         'superpages': 'https://www.superpages.com/free-listing',
         'citysearch': 'https://www.citysearch.com',
         'chamberofcommerce': 'https://www.chamberofcommerce.com/add-your-business',
+        'chamber_of_commerce': 'https://www.chamberofcommerce.com/add-your-business',
         'thumbtack': 'https://www.thumbtack.com/join',
         'angies_list': 'https://www.angi.com/pro',
         'angi': 'https://www.angi.com/pro',
         'painful_pleasures': 'https://www.painfulpleasures.com/tattoo-shops/submit',
         'tattoo_seo': 'https://www.tattooseo.com/directory/submit',
         'world_tattoo_gallery': 'https://www.worldtattooportal.com/register',
+        'white_pages': 'https://www.whitepages.com',
+        'whitepages': 'https://www.whitepages.com',
+        'local.com': 'https://www.local.com',
+        'brownbook': 'https://www.brownbook.net/add-business/',
+        'cylex': 'https://www.cylex.us.com/add-your-business.html',
+        'ezlocal': 'https://www.ezlocal.com/signup',
+        'showmelocal': 'https://www.showmelocal.com/AddBusiness.aspx',
+        'merchantcircle': 'https://www.merchantcircle.com/signup',
+        'dexknows': 'https://www.dexknows.com',
+        'birdeye': 'https://birdeye.com/listing',
+        'mapquest': 'https://www.mapquest.com/my-business',
+        'rocketreach': 'https://rocketreach.co',
+        'tattoocloud': 'https://www.tattoocloud.com',
+        'tattooshopreviews': 'https://www.tattooshopreviews.com',
+        'tattoonow_legacy': 'https://www.tattoonow.com/join',
+        'tiktok': 'https://www.tiktok.com/signup',
+        'waze': 'https://www.waze.com/business',
+        'wheree': 'https://www.wheree.com',
+        'x_twitter': 'https://twitter.com/i/flow/signup',
+        'youtube': 'https://www.youtube.com/create_channel',
       };
 
       function getSubmitUrl(l) {
         if (l.submit_url) return l.submit_url;
-        const key = l.platform.toLowerCase().replace(/[\s-]+/g, '_');
+        const key = l.platform.toLowerCase().replace(/[()]/g, '').replace(/[\s-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
         return submitUrls[key] || null;
       }
 
