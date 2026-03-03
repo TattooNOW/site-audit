@@ -1084,9 +1084,9 @@
                         : <span style={{color:'#555'}}>not found</span>}
                     </td>
                     <td style={{fontSize:'0.8rem'}}>
-                      {ig && <div><span style={{color:'#E1306C'}}>IG</span> <span style={{color:'#aaa'}}>@{ig}</span>{c.intel.instagram_followers ? <span style={{color:'#888'}}> ({c.intel.instagram_followers.toLocaleString()})</span> : ''}</div>}
-                      {fb && <div><span style={{color:'#4267B2'}}>FB</span> <span style={{color:'#aaa'}}>{fb}</span>{c.intel.facebook_followers ? <span style={{color:'#888'}}> ({c.intel.facebook_followers.toLocaleString()})</span> : ''}</div>}
-                      {tt && <div><span style={{color:'#69C9D0'}}>TT</span> <span style={{color:'#aaa'}}>@{tt}</span>{c.intel.tiktok_followers ? <span style={{color:'#888'}}> ({c.intel.tiktok_followers.toLocaleString()})</span> : ''}</div>}
+                      {ig && <div><span style={{color:'#E1306C'}}>IG</span> <a href={'https://instagram.com/' + ig} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{ig}</a>{c.intel.instagram_followers ? <span style={{color:'#888'}}> {c.intel.instagram_followers.toLocaleString()} followers</span> : ''}{c.intel.instagram_posts ? <span style={{color:'#666'}}> / {c.intel.instagram_posts.toLocaleString()} posts</span> : ''}</div>}
+                      {fb && <div><span style={{color:'#4267B2'}}>FB</span> <a href={'https://facebook.com/' + fb} target="_blank" rel="noopener" style={{color:'#aaa'}}>{fb}</a>{c.intel.facebook_followers ? <span style={{color:'#888'}}> {c.intel.facebook_followers.toLocaleString()} followers</span> : ''}</div>}
+                      {tt && <div><span style={{color:'#69C9D0'}}>TT</span> <a href={'https://tiktok.com/@' + tt} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{tt}</a>{c.intel.tiktok_followers ? <span style={{color:'#888'}}> {c.intel.tiktok_followers.toLocaleString()} followers</span> : ''}</div>}
                       {!ig && !fb && !tt && <span style={{color:'#555'}}>none found</span>}
                     </td>
                     <td>
