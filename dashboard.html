@@ -331,7 +331,7 @@
     }
 
     /* ── Tab: Overview ───────────────────────────────────── */
-    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, lastAuditDate, locationId, siteDomain }) {
+    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, lastAuditDate, locationId, siteDomain }) {
       const seo = scores.seo?.score ?? '\u2014';
       const ai = scores.ai_discoverability?.score ?? '\u2014';
       const geo = scores.geo_readiness?.score ?? '\u2014';
@@ -403,6 +403,24 @@
                   {core30.categories_missing > 0 && `${core30.categories_missing} category page${core30.categories_missing>1?'s':''} missing`}
                   {core30.categories_missing > 0 && core30.services_missing > 0 && ' \u2022 '}
                   {core30.services_missing > 0 && `${core30.services_missing} service page${core30.services_missing>1?'s':''} missing`}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Homepage Coverage */}
+          {homepageSections && (
+            <section className="card" style={{marginBottom:'2rem'}}>
+              <h3 style={{marginTop:0}}>Homepage Sections</h3>
+              <div style={{display:'flex', alignItems:'center', gap:'1rem'}}>
+                <div className="progress-bar" style={{flex:1, height:'10px'}}>
+                  <div className="progress-fill" style={{width: `${homepageSections.total ? Math.round(homepageSections.found/homepageSections.total*100) : 0}%`, background: homepageSections.critical_missing > 0 ? '#f87171' : homepageSections.missing > 0 ? '#fbbf24' : '#4ade80'}} />
+                </div>
+                <span style={{color:'#888', fontSize:'0.85rem', whiteSpace:'nowrap'}}>{homepageSections.found}/{homepageSections.total} sections</span>
+              </div>
+              {homepageSections.critical_missing > 0 && (
+                <div style={{marginTop:'0.5rem', fontSize:'0.85rem', color:'#f87171'}}>
+                  {homepageSections.critical_missing} critical section{homepageSections.critical_missing>1?'s':''} missing
                 </div>
               )}
             </section>
@@ -623,6 +641,72 @@
               </ul>
             </section>
           )}
+        </div>
+      );
+    }
+
+    /* ── Tab: Homepage ──────────────────────────────────── */
+    function HomepageTab({ homepageSections }) {
+      if (!homepageSections || !homepageSections.sections) {
+        return <p style={{color:'#888'}}>No homepage section analysis yet. Run a full audit first.</p>;
+      }
+
+      const { sections, total, found, missing, critical_missing } = homepageSections;
+      const pct = total ? Math.round(found / total * 100) : 0;
+      const importanceOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+      const sorted = [...sections].sort((a, b) => (importanceOrder[a.importance] || 4) - (importanceOrder[b.importance] || 4));
+      const impColor = imp => ({ critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#60a5fa' }[imp] || '#888');
+
+      return (
+        <div>
+          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
+            <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
+              <h3>Sections Found</h3>
+              <div className="value">{found}<span style={{fontSize:'1rem', color:'#888'}}>/{total}</span></div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{pct}% complete</div>
+            </div>
+            <div className="score-card" style={{borderTop:'3px solid #f87171'}}>
+              <h3>Missing</h3>
+              <div className="value" style={{color:'#f87171'}}>{missing}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>sections to add</div>
+            </div>
+            <div className="score-card" style={{borderTop: critical_missing > 0 ? '3px solid #ef4444' : '3px solid #4ade80'}}>
+              <h3>Critical Missing</h3>
+              <div className="value" style={{color: critical_missing > 0 ? '#ef4444' : '#4ade80'}}>{critical_missing}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{critical_missing > 0 ? 'needs attention' : 'all covered'}</div>
+            </div>
+          </section>
+
+          <section className="card" style={{marginBottom:'2rem'}}>
+            <h3 style={{marginTop:0}}>Homepage Coverage</h3>
+            <div className="progress-bar" style={{height:'12px', marginBottom:'1rem'}}>
+              <div className="progress-fill" style={{width: pct+'%', background: pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171'}} />
+            </div>
+          </section>
+
+          <table>
+            <thead>
+              <tr><th>Section</th><th>Status</th><th>Importance</th><th>Recommendation</th></tr>
+            </thead>
+            <tbody>
+              {sorted.map((s, i) => (
+                <tr key={i} style={{opacity: s.found ? 0.6 : 1}}>
+                  <td style={{fontWeight: 500}}>{s.name}</td>
+                  <td>
+                    <span className="pill" style={{background: s.found ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)', color: s.found ? '#4ade80' : '#f87171'}}>
+                      {s.found ? 'Found' : 'Missing'}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="pill" style={{background: `${impColor(s.importance)}22`, color: impColor(s.importance)}}>
+                      {s.importance}
+                    </span>
+                  </td>
+                  <td style={{fontSize:'0.85rem', color:'#aaa', maxWidth:'400px'}}>{s.recommendation || '\u2014'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       );
     }
@@ -997,6 +1081,7 @@
       const delta = latest.delta || {};
       const core30 = latest.core30_coverage || null;
       const contentBriefs = latest.content_briefs || [];
+      const homepageSections = latest.homepage_sections || null;
 
       const chartData = audits.map(a => ({
         date: a.audit_date,
@@ -1016,8 +1101,11 @@
       const pendingLinks = linkChecklist.filter(l => l.status !== 'done').length;
       const missingPages = (core30?.categories_missing||0) + (core30?.services_missing||0);
 
+      const hpMissing = homepageSections?.missing || 0;
+
       const tabs = [
         { id:'overview', label:'Overview' },
+        { id:'homepage', label:'Homepage', badge: hpMissing > 0 ? hpMissing : null },
         { id:'rankmap', label:'Rank Map', badge: latestRankMap ? latestRankMap.top_3_pct+'%' : null },
         { id:'core30', label:'Core 30', badge: missingPages > 0 ? missingPages : null },
         { id:'findings', label:'Findings', badge: openFindings || null },
@@ -1044,7 +1132,8 @@
             ))}
           </nav>
 
-          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} lastAuditDate={latest.audit_date} locationId={locationId} siteDomain={site.domain} />}
+          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} lastAuditDate={latest.audit_date} locationId={locationId} siteDomain={site.domain} />}
+          {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
           {activeTab === 'findings' && <FindingsTab latestFindings={latestFindings} />}
