@@ -1015,93 +1015,89 @@
     function CompetitorsTab({ competitors, site, aiMentions }) {
       if (!competitors || competitors.length === 0) return <p style={{color:'#888'}}>No competitor data yet. Run the AI prober and competitor intelligence scraper to populate.</p>;
 
-      // Parse notes JSON for social media data
-      const enriched = competitors.map(c => {
+      // Parse notes JSON and separate client vs competitors
+      const all = competitors.map(c => {
         let intel = {};
         try { intel = c.notes ? JSON.parse(c.notes) : {}; } catch(e) { intel = {}; }
         return { ...c, intel };
-      }).sort((a, b) => {
-        // Sort by AI mentions descending, then above_client descending
-        const aMentions = a.intel.ai_mentions || 0;
-        const bMentions = b.intel.ai_mentions || 0;
-        if (bMentions !== aMentions) return bMentions - aMentions;
+      });
+      const clientRow = all.find(c => c.intel.is_client);
+      const compRows = all.filter(c => !c.intel.is_client && c.intel.source === 'ai_probes').sort((a, b) => {
+        const am = a.intel.ai_mentions || 0, bm = b.intel.ai_mentions || 0;
+        if (bm !== am) return bm - am;
         return (b.intel.above_client || 0) - (a.intel.above_client || 0);
       });
 
-      // Count how many competitors rank above client
-      const aboveCount = enriched.filter(c => (c.intel.above_client || 0) > 0).length;
+      const aboveCount = compRows.filter(c => (c.intel.above_client || 0) > 0).length;
+      const fmt = n => n ? n.toLocaleString() : '\u2014';
+
+      // Helper: render social cell for a row
+      const SocialCell = ({intel}) => {
+        const ig = intel.instagram, fb = intel.facebook, tt = intel.tiktok;
+        if (!ig && !fb && !tt) return <span style={{color:'#555'}}>none found</span>;
+        return <React.Fragment>
+          {ig && <div><span style={{color:'#E1306C'}}>IG</span> <a href={'https://instagram.com/'+ig} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{ig}</a>{intel.instagram_followers ? <span style={{color:'#888'}}> {fmt(intel.instagram_followers)}</span> : ''}{intel.instagram_posts ? <span style={{color:'#666'}}> / {fmt(intel.instagram_posts)} posts</span> : ''}</div>}
+          {fb && <div><span style={{color:'#4267B2'}}>FB</span> <a href={'https://facebook.com/'+fb} target="_blank" rel="noopener" style={{color:'#aaa'}}>{fb}</a>{intel.facebook_followers ? <span style={{color:'#888'}}> {fmt(intel.facebook_followers)}</span> : ''}{intel.facebook_likes ? <span style={{color:'#666'}}> / {fmt(intel.facebook_likes)} likes</span> : ''}</div>}
+          {tt && <div><span style={{color:'#69C9D0'}}>TT</span> <a href={'https://tiktok.com/@'+tt} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{tt}</a>{intel.tiktok_followers ? <span style={{color:'#888'}}> {fmt(intel.tiktok_followers)}</span> : ''}</div>}
+        </React.Fragment>;
+      };
+
+      // Helper: render review cell (Google + Yelp)
+      const ReviewCell = ({intel, review_rating, review_count}) => {
+        const gr = intel.google_rating || review_rating;
+        const gc = intel.google_reviews || review_count;
+        const yr = intel.yelp_rating;
+        const yc = intel.yelp_reviews;
+        if (!gr && !yr) return <span style={{color:'#555'}}>{'\u2014'}</span>;
+        return <React.Fragment>
+          {gr ? <div><span style={{color:'#4285f4'}}>G</span> <span style={{color:'#fbbf24'}}>{gr}</span><span style={{color:'#888', fontSize:'0.8rem'}}> ({gc || '?'})</span></div> : null}
+          {yr ? <div><span style={{color:'#d32323'}}>Y</span> <span style={{color:'#fbbf24'}}>{yr}</span><span style={{color:'#888', fontSize:'0.8rem'}}> ({yc || '?'})</span></div> : null}
+        </React.Fragment>;
+      };
 
       return (
         <div>
-          <h3>Competitors in AI Results — {site.target_city || site.city}</h3>
+          <h3>Competitive Intelligence — {site.target_city || site.city}</h3>
           <p style={{color:'#888', fontSize:'0.85rem', marginBottom:'1rem'}}>
-            {enriched.length} competitors found across AI probes. <span style={{color:'#f87171'}}>{aboveCount} rank above you</span> in at least one AI response.
+            {compRows.length} competitors found across AI probes. <span style={{color:'#f87171'}}>{aboveCount} rank above you</span> in AI results.
           </p>
-
-          {/* Summary cards */}
-          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
-            <div className="score-card" style={{borderTop:'3px solid #EA9320'}}>
-              <h3>You</h3>
-              <div style={{fontSize:'1.1rem', fontWeight:600, color:'#EA9320'}}>{site.business_name}</div>
-              <div style={{color:'#aaa', fontSize:'0.8rem', marginTop:'0.25rem'}}>{site.domain}</div>
-              {site.gbp_review_rating && <div style={{color:'#fbbf24', marginTop:'0.5rem'}}>{site.gbp_review_rating} stars ({site.gbp_review_count || 0} reviews)</div>}
-            </div>
-            <div className="score-card" style={{borderTop:'3px solid #f87171'}}>
-              <h3>Top Threat</h3>
-              {enriched[0] && <React.Fragment>
-                <div style={{fontSize:'1.1rem', fontWeight:600, color:'#f87171'}}>{enriched[0].competitor_name}</div>
-                <div style={{color:'#aaa', fontSize:'0.8rem', marginTop:'0.25rem'}}>{enriched[0].domain || 'no domain found'}</div>
-                <div style={{color:'#888', fontSize:'0.8rem', marginTop:'0.25rem'}}>Appears in {enriched[0].intel.ai_mentions || '?'} probes, {enriched[0].intel.above_client || 0}x above you</div>
-              </React.Fragment>}
-            </div>
-          </section>
 
           <table>
             <thead><tr>
               <th>#</th>
-              <th>Competitor</th>
+              <th>Business</th>
               <th>Website</th>
               <th>Social Media</th>
               <th>Reviews</th>
               <th>AI Mentions</th>
-              <th>Ranks Above You</th>
+              <th>Ranks Above</th>
             </tr></thead>
             <tbody>
-              {enriched.map((c, idx) => {
-                const aboveClient = c.intel.above_client || 0;
+              {/* Client row first, highlighted */}
+              {clientRow && (
+                <tr style={{background:'rgba(234,147,32,0.12)', borderLeft:'3px solid #EA9320'}}>
+                  <td style={{color:'#EA9320', fontWeight:700, fontSize:'0.9rem'}}>{'\u2605'}</td>
+                  <td style={{fontWeight:700, color:'#EA9320'}}>{clientRow.competitor_name}<div style={{fontSize:'0.7rem',color:'#888'}}>YOUR BUSINESS</div></td>
+                  <td>{clientRow.domain ? <a href={'https://'+clientRow.domain} target="_blank" rel="noopener" style={{color:'#EA9320', fontSize:'0.85rem'}}>{clientRow.domain}</a> : '\u2014'}</td>
+                  <td style={{fontSize:'0.8rem'}}><SocialCell intel={clientRow.intel} /></td>
+                  <td style={{fontSize:'0.8rem'}}><ReviewCell intel={clientRow.intel} review_rating={clientRow.review_rating} review_count={clientRow.review_count} /></td>
+                  <td style={{textAlign:'center'}}>{'\u2014'}</td>
+                  <td style={{textAlign:'center'}}>{'\u2014'}</td>
+                </tr>
+              )}
+              {compRows.map((c, idx) => {
+                const above = c.intel.above_client || 0;
                 const mentions = c.intel.ai_mentions || 0;
-                const ig = c.intel.instagram;
-                const fb = c.intel.facebook;
-                const tt = c.intel.tiktok;
-                const bgColor = aboveClient > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(74,222,128,0.04)';
+                const bgColor = above > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(74,222,128,0.04)';
                 return (
                   <tr key={c.id} style={{background: bgColor}}>
                     <td style={{color:'#888', fontSize:'0.8rem'}}>{idx + 1}</td>
                     <td style={{fontWeight:500}}>{c.competitor_name}</td>
-                    <td>
-                      {c.domain
-                        ? <a href={'https://' + c.domain} target="_blank" rel="noopener" style={{color:'#EA9320', fontSize:'0.85rem'}}>{c.domain}</a>
-                        : <span style={{color:'#555'}}>not found</span>}
-                    </td>
-                    <td style={{fontSize:'0.8rem'}}>
-                      {ig && <div><span style={{color:'#E1306C'}}>IG</span> <a href={'https://instagram.com/' + ig} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{ig}</a>{c.intel.instagram_followers ? <span style={{color:'#888'}}> {c.intel.instagram_followers.toLocaleString()} followers</span> : ''}{c.intel.instagram_posts ? <span style={{color:'#666'}}> / {c.intel.instagram_posts.toLocaleString()} posts</span> : ''}</div>}
-                      {fb && <div><span style={{color:'#4267B2'}}>FB</span> <a href={'https://facebook.com/' + fb} target="_blank" rel="noopener" style={{color:'#aaa'}}>{fb}</a>{c.intel.facebook_followers ? <span style={{color:'#888'}}> {c.intel.facebook_followers.toLocaleString()} followers</span> : ''}</div>}
-                      {tt && <div><span style={{color:'#69C9D0'}}>TT</span> <a href={'https://tiktok.com/@' + tt} target="_blank" rel="noopener" style={{color:'#aaa'}}>@{tt}</a>{c.intel.tiktok_followers ? <span style={{color:'#888'}}> {c.intel.tiktok_followers.toLocaleString()} followers</span> : ''}</div>}
-                      {!ig && !fb && !tt && <span style={{color:'#555'}}>none found</span>}
-                    </td>
-                    <td>
-                      {c.review_rating
-                        ? <span style={{color: (c.review_rating||0) >= (site.gbp_review_rating||0) ? '#f87171' : '#4ade80'}}>{c.review_rating} <span style={{color:'#888', fontSize:'0.8rem'}}>({c.review_count || '?'})</span></span>
-                        : <span style={{color:'#555'}}>{'\u2014'}</span>}
-                    </td>
-                    <td style={{textAlign:'center'}}>
-                      <span className="pill" style={{background:'rgba(234,147,32,0.15)', color:'#EA9320'}}>{mentions}x</span>
-                    </td>
-                    <td style={{textAlign:'center'}}>
-                      {aboveClient > 0
-                        ? <span className="pill" style={{background:'rgba(248,113,113,0.2)', color:'#f87171'}}>{aboveClient}x above</span>
-                        : <span style={{color:'#4ade80', fontSize:'0.85rem'}}>below you</span>}
-                    </td>
+                    <td>{c.domain ? <a href={'https://'+c.domain} target="_blank" rel="noopener" style={{color:'#EA9320', fontSize:'0.85rem'}}>{c.domain}</a> : <span style={{color:'#555'}}>not found</span>}</td>
+                    <td style={{fontSize:'0.8rem'}}><SocialCell intel={c.intel} /></td>
+                    <td style={{fontSize:'0.8rem'}}><ReviewCell intel={c.intel} review_rating={c.review_rating} review_count={c.review_count} /></td>
+                    <td style={{textAlign:'center'}}><span className="pill" style={{background:'rgba(234,147,32,0.15)', color:'#EA9320'}}>{mentions}x</span></td>
+                    <td style={{textAlign:'center'}}>{above > 0 ? <span className="pill" style={{background:'rgba(248,113,113,0.2)', color:'#f87171'}}>{above}x</span> : <span style={{color:'#4ade80', fontSize:'0.85rem'}}>below</span>}</td>
                   </tr>
                 );
               })}
@@ -1109,7 +1105,7 @@
           </table>
 
           <p style={{fontSize:'0.8rem', color:'#666', marginTop:'1rem'}}>
-            Data sourced from AI probe results. Red rows = competitor ranks above you in AI responses. "Ranks Above You" counts how many times they appeared before you in ranked AI results.
+            Social stats via Apify. Reviews: <span style={{color:'#4285f4'}}>G</span>=Google, <span style={{color:'#d32323'}}>Y</span>=Yelp. Red rows = ranks above you in AI responses.
           </p>
         </div>
       );
@@ -1426,8 +1422,8 @@
         { id:'geo', label:'GEO' },
         { id:'ai', label:'AI' },
         { id:'links', label:'Link Checklist', badge: pendingLinks || null },
-        { id:'competitors', label:'Competitors' },
         { id:'directories', label:'Directories', badge: dirNeedsAtt || null },
+        { id:'competitors', label:'Competitors' },
       ];
 
       return (
@@ -1454,8 +1450,8 @@
           {activeTab === 'geo' && <GeoTab latestGeo={latestGeo} />}
           {activeTab === 'ai' && <AITab aiMentions={aiMentions} businessName={site.business_name} />}
           {activeTab === 'links' && <LinkChecklistTab links={linkChecklist} />}
-          {activeTab === 'competitors' && <CompetitorsTab competitors={competitors} site={site} aiMentions={aiMentions} />}
           {activeTab === 'directories' && <DirectoryTab listings={directoryListings} site={site} />}
+          {activeTab === 'competitors' && <CompetitorsTab competitors={competitors} site={site} aiMentions={aiMentions} />}
 
           <footer style={{marginTop:'2rem', padding:'1rem 0', borderTop:'1px solid #222', fontSize:'0.8rem', color:'#666'}}>
             Powered by <a href="https://tattoonow.com" target="_blank">TattooNOW</a> &bull; Site Audit System v3.0
