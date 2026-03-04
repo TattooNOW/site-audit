@@ -331,10 +331,11 @@
     }
 
     /* ── Tab: Overview ───────────────────────────────────── */
-    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, lastAuditDate, locationId, siteDomain }) {
+    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, lastAuditDate, locationId, siteDomain, billingRecords, apifyResults }) {
       const seo = scores.seo?.score ?? '\u2014';
       const ai = scores.ai_discoverability?.score ?? '\u2014';
       const geo = scores.geo_readiness?.score ?? '\u2014';
+      const lh = apifyResults?.lighthouse || {};
 
       return (
         <div>
@@ -483,6 +484,66 @@
               </div>
             </div>
           </section>
+
+          {/* Performance (Lighthouse) */}
+          {lh.performanceScore != null && (
+            <section style={{marginBottom:'2rem'}}>
+              <h2>Site Performance</h2>
+              <section style={{display:'flex', gap:'1rem', flexWrap:'wrap'}}>
+                {[
+                  { label:'Performance', val: lh.performanceScore, color:'#a78bfa' },
+                  { label:'SEO', val: lh.seoScore, color:'#4ade80' },
+                  { label:'Accessibility', val: lh.accessibilityScore, color:'#60a5fa' },
+                  { label:'Best Practices', val: lh.bestPracticesScore, color:'#fbbf24' },
+                ].map(m => (
+                  <div key={m.label} className="score-card" style={{borderTop:`3px solid ${m.color}`}}>
+                    <h3>{m.label}</h3>
+                    <div className="value" style={{color: m.val >= 90 ? '#4ade80' : m.val >= 50 ? '#fbbf24' : '#f87171'}}>{m.val != null ? Math.round(m.val * 100) : '\u2014'}</div>
+                  </div>
+                ))}
+              </section>
+              {(lh.lcp || lh.fcp || lh.cls != null || lh.tbt != null) && (
+                <div className="card" style={{marginTop:'1rem'}}>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px,1fr))', gap:'1rem'}}>
+                    {lh.lcp != null && <div><div style={{color:'#888', fontSize:'0.8rem'}}>LCP</div><div style={{fontSize:'1.3rem', fontWeight:700}}>{(lh.lcp/1000).toFixed(1)}s</div></div>}
+                    {lh.fcp != null && <div><div style={{color:'#888', fontSize:'0.8rem'}}>FCP</div><div style={{fontSize:'1.3rem', fontWeight:700}}>{(lh.fcp/1000).toFixed(1)}s</div></div>}
+                    {lh.cls != null && <div><div style={{color:'#888', fontSize:'0.8rem'}}>CLS</div><div style={{fontSize:'1.3rem', fontWeight:700}}>{lh.cls.toFixed(3)}</div></div>}
+                    {lh.tbt != null && <div><div style={{color:'#888', fontSize:'0.8rem'}}>TBT</div><div style={{fontSize:'1.3rem', fontWeight:700}}>{lh.tbt}ms</div></div>}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Billing Summary */}
+          {billingRecords.length > 0 && (
+            <section className="card" style={{marginBottom:'2rem', border:'1px solid #333'}}>
+              <h3 style={{marginTop:0}}>Audit Billing</h3>
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px,1fr))', gap:'1rem'}}>
+                <div>
+                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Audits</div>
+                  <div style={{fontSize:'1.5rem', fontWeight:700}}>{billingRecords.length}</div>
+                </div>
+                <div>
+                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Charged</div>
+                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#4ade80'}}>${billingRecords.reduce((s, b) => s + Number(b.charge_amount || 0), 0).toFixed(2)}</div>
+                </div>
+                <div>
+                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Cost</div>
+                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#f87171'}}>${billingRecords.reduce((s, b) => s + Number(b.total_cost || 0), 0).toFixed(2)}</div>
+                </div>
+                <div>
+                  <div style={{color:'#888', fontSize:'0.8rem'}}>Margin</div>
+                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#fbbf24'}}>${billingRecords.reduce((s, b) => s + Number(b.margin || 0), 0).toFixed(2)}</div>
+                </div>
+              </div>
+              {billingRecords.length > 0 && (
+                <div style={{marginTop:'1rem', fontSize:'0.8rem', color:'#666'}}>
+                  Latest: {billingRecords[0].audit_date} &bull; Status: {billingRecords[0].billing_status}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Run Audit / Refresh Data */}
           <RunAuditButton locationId={locationId} lastAuditDate={lastAuditDate} defaults={{website: siteDomain}} />
@@ -1251,6 +1312,113 @@
       );
     }
 
+    /* ── Settings Panel ──────────────────────────────────── */
+    function SettingsPanel({ site, open, onClose }) {
+      const [saving, setSaving] = React.useState(false);
+      const [saved, setSaved] = React.useState(false);
+      const social = site.social_links || {};
+      const [form, setForm] = React.useState({
+        domain: site.domain || '',
+        phone: site.phone || '',
+        address: site.address || '',
+        city: site.target_city || site.city || '',
+        state: site.target_state || site.state || '',
+        ig: social.instagram || '',
+        fb: social.facebook || '',
+        tt: social.tiktok || '',
+        google_url: social.google_url || '',
+        yelp_url: social.yelp_url || '',
+      });
+
+      const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+      const save = async () => {
+        setSaving(true);
+        try {
+          await db.from('sites').update({
+            domain: form.domain,
+            phone: form.phone,
+            address: form.address,
+            target_city: form.city,
+            target_state: form.state,
+            social_links: {
+              instagram: form.ig, facebook: form.fb, tiktok: form.tt,
+              google_url: form.google_url, yelp_url: form.yelp_url,
+            },
+          }).eq('id', site.id);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        } catch (e) { console.error(e); }
+        setSaving(false);
+      };
+
+      if (!open) return null;
+
+      const inputStyle = { background:'#111', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.6rem', borderRadius:'4px', width:'100%', fontFamily:'Roboto, sans-serif', fontSize:'0.85rem' };
+      const labelStyle = { color:'#888', fontSize:'0.75rem', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.25rem', display:'block' };
+
+      return (
+        <div style={{position:'fixed', top:0, right:0, width:'360px', height:'100vh', background:'#111', borderLeft:'1px solid #333', zIndex:1000, overflowY:'auto', padding:'1.5rem', boxShadow:'-4px 0 20px rgba(0,0,0,0.5)'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem'}}>
+            <h3 style={{margin:0}}>Site Settings</h3>
+            <button onClick={onClose} style={{background:'none', border:'none', color:'#888', fontSize:'1.2rem', cursor:'pointer'}}>&times;</button>
+          </div>
+
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Domain</label>
+            <input style={inputStyle} value={form.domain} onChange={e => set('domain', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Phone</label>
+            <input style={inputStyle} value={form.phone} onChange={e => set('phone', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Address</label>
+            <input style={inputStyle} value={form.address} onChange={e => set('address', e.target.value)} />
+          </div>
+          <div style={{display:'flex', gap:'0.5rem', marginBottom:'1.5rem'}}>
+            <div style={{flex:2}}>
+              <label style={labelStyle}>City</label>
+              <input style={inputStyle} value={form.city} onChange={e => set('city', e.target.value)} />
+            </div>
+            <div style={{flex:1}}>
+              <label style={labelStyle}>State</label>
+              <input style={inputStyle} value={form.state} onChange={e => set('state', e.target.value)} />
+            </div>
+          </div>
+
+          <h4 style={{color:'#EA9320', margin:'0 0 0.75rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Social Profiles</h4>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Instagram Handle</label>
+            <input style={inputStyle} placeholder="username" value={form.ig} onChange={e => set('ig', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Facebook Page</label>
+            <input style={inputStyle} placeholder="pagename" value={form.fb} onChange={e => set('fb', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>TikTok Handle</label>
+            <input style={inputStyle} placeholder="username" value={form.tt} onChange={e => set('tt', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1rem'}}>
+            <label style={labelStyle}>Google Business URL</label>
+            <input style={inputStyle} placeholder="https://maps.google.com/..." value={form.google_url} onChange={e => set('google_url', e.target.value)} />
+          </div>
+          <div style={{marginBottom:'1.5rem'}}>
+            <label style={labelStyle}>Yelp Business URL</label>
+            <input style={inputStyle} placeholder="https://yelp.com/biz/..." value={form.yelp_url} onChange={e => set('yelp_url', e.target.value)} />
+          </div>
+
+          <button onClick={save} disabled={saving} style={{
+            width:'100%', padding:'0.6rem', background: saved ? '#4ade80' : '#EA9320', color: saved ? '#000' : '#000',
+            border:'none', borderRadius:'4px', fontWeight:600, cursor: saving ? 'wait' : 'pointer', fontSize:'0.9rem',
+          }}>
+            {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
+          </button>
+        </div>
+      );
+    }
+
     /* ── Main App ────────────────────────────────────────── */
     function App() {
       const params = new URLSearchParams(window.location.search);
@@ -1279,8 +1447,10 @@
       const [rankMaps, setRankMaps] = React.useState([]);
       const [competitors, setCompetitors] = React.useState([]);
       const [linkChecklist, setLinkChecklist] = React.useState([]);
+      const [billingRecords, setBillingRecords] = React.useState([]);
       const [activeTab, setActiveTab] = React.useState('overview');
       const [auditRunning, setAuditRunning] = React.useState(false);
+      const [settingsOpen, setSettingsOpen] = React.useState(false);
 
       // Check if an audit is currently in progress (progress rows exist but not complete)
       React.useEffect(() => {
@@ -1321,6 +1491,7 @@
               db.from('competitors').select('*').eq('site_id', siteData.id).order('created_at', {ascending:false}),
               db.from('link_checklist').select('*').eq('site_id', siteData.id).order('priority', {ascending:true}),
               db.from('directory_listings').select('*').eq('site_id', siteData.id),
+              db.from('audit_billing').select('*').eq('site_id', siteData.id).order('audit_date', {ascending:false}),
             ];
 
             const results = await Promise.allSettled(queries);
@@ -1335,6 +1506,7 @@
             setCompetitors(safe(results[5]));
             setLinkChecklist(safe(results[6]));
             setDirectoryListings(safe(results[7]));
+            setBillingRecords(safe(results[8]));
           } catch (e) {
             console.error('Dashboard load error:', e);
             if (!canceled) setError(e);
@@ -1428,10 +1600,17 @@
 
       return (
         <div className="container">
-          <header style={{marginBottom:'1.5rem'}}>
-            <h1 style={{margin:'0 0 0.25rem 0'}}>{site.business_name}</h1>
-            <p style={{margin:0, color:'#888'}}>{site.domain} &bull; {site.target_city||site.city}, {site.target_state||site.state} &bull; Last audit: {latest.audit_date}</p>
+          <header style={{marginBottom:'1.5rem', display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+            <div>
+              <h1 style={{margin:'0 0 0.25rem 0'}}>{site.business_name}</h1>
+              <p style={{margin:0, color:'#888'}}>{site.domain} &bull; {site.target_city||site.city}, {site.target_state||site.state} &bull; Last audit: {latest.audit_date}</p>
+            </div>
+            <button onClick={() => setSettingsOpen(!settingsOpen)} title="Site Settings" style={{
+              background:'none', border:'1px solid #333', borderRadius:'6px', padding:'0.4rem 0.6rem',
+              color: settingsOpen ? '#EA9320' : '#888', cursor:'pointer', fontSize:'1.1rem', marginTop:'0.25rem',
+            }}>&#9881;</button>
           </header>
+          <SettingsPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
           <nav className="tab-bar">
             {tabs.map(t => (
@@ -1442,7 +1621,7 @@
             ))}
           </nav>
 
-          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} lastAuditDate={latest.audit_date} locationId={locationId} siteDomain={site.domain} />}
+          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} lastAuditDate={latest.audit_date} locationId={locationId} siteDomain={site.domain} billingRecords={billingRecords} apifyResults={latest.apify_results || {}} />}
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
