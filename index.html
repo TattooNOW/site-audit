@@ -924,6 +924,7 @@
       const [filterSev, setFilterSev] = React.useState('all');
       const [filterStat, setFilterStat] = React.useState('all');
       const [filterCat, setFilterCat] = React.useState('all');
+      const [selected, setSelected] = React.useState(null);
 
       const categories = [...new Set(latestFindings.map(f => f.category))].sort();
 
@@ -935,6 +936,8 @@
           const o = {critical:0,high:1,medium:2,low:3};
           return (o[a.severity]||4)-(o[b.severity]||4);
         });
+
+      const statusIcon = s => s === 'fixed' ? '\u2705' : s === 'in_progress' ? '\u23F3' : '\u26A0\uFE0F';
 
       return (
         <div>
@@ -964,7 +967,7 @@
             {filtered.map(f => {
               const age = Math.floor((new Date() - new Date(f.still_open_since || f.first_detected || f.created_at)) / 86400000);
               return (
-                <tr key={f.id} title={f.fix} style={{background: f.status==='fixed'?'rgba(74,222,128,0.06)':f.status==='in_progress'?'rgba(251,191,36,0.08)':'rgba(248,113,113,0.08)'}}>
+                <tr key={f.id} onClick={() => setSelected(f)} style={{cursor:'pointer', background: f.status==='fixed'?'rgba(74,222,128,0.06)':f.status==='in_progress'?'rgba(251,191,36,0.08)':'rgba(248,113,113,0.08)'}}>
                   <td><span className="pill" style={{background:`${sevColor(f.severity)}22`, color:sevColor(f.severity)}}>{f.severity}</span></td>
                   <td style={{fontWeight:500}}>{f.title}</td>
                   <td style={{color:'#888'}}>{f.category}</td>
@@ -978,6 +981,39 @@
             })}
             </tbody>
           </table>
+
+          {/* Finding Detail Modal */}
+          {selected && (
+            <div onClick={() => setSelected(null)} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, padding:'1rem'}}>
+              <div onClick={e => e.stopPropagation()} style={{background:'#1a1a1a', border:'1px solid #333', borderRadius:'12px', maxWidth:'600px', width:'100%', maxHeight:'85vh', overflow:'auto', padding:0}}>
+                {/* Header bar */}
+                <div style={{padding:'1.25rem 1.5rem', borderBottom:'1px solid #333', display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                  <div>
+                    <span className="pill" style={{background:`${sevColor(selected.severity)}22`, color:sevColor(selected.severity), marginRight:'0.5rem'}}>{selected.severity.toUpperCase()}</span>
+                    <span style={{color:'#888', fontSize:'0.85rem'}}>{selected.category}</span>
+                    <h3 style={{margin:'0.5rem 0 0', fontSize:'1.2rem', lineHeight:'1.4'}}>{selected.title}</h3>
+                  </div>
+                  <button onClick={() => setSelected(null)} style={{background:'none', border:'none', color:'#888', fontSize:'1.5rem', cursor:'pointer', padding:'0 0.25rem', lineHeight:1}}>&times;</button>
+                </div>
+
+                {/* Meta row */}
+                <div style={{display:'flex', gap:'1.5rem', padding:'1rem 1.5rem', borderBottom:'1px solid #222', fontSize:'0.85rem', color:'#aaa', flexWrap:'wrap'}}>
+                  <div><span style={{color:'#666'}}>Status</span> <span style={{marginLeft:'0.25rem'}}>{statusIcon(selected.status)} {selected.status}</span></div>
+                  {selected.page && <div><span style={{color:'#666'}}>Page</span> <code style={{marginLeft:'0.25rem', background:'#222', padding:'0.1rem 0.4rem', borderRadius:'4px', fontSize:'0.8rem'}}>{selected.page}</code></div>}
+                  {selected.layer != null && <div><span style={{color:'#666'}}>Layer</span> <span style={{marginLeft:'0.25rem'}}>L{selected.layer}</span></div>}
+                  {selected.effort_minutes && <div><span style={{color:'#666'}}>Effort</span> <span style={{marginLeft:'0.25rem'}}>{selected.effort_minutes < 60 ? selected.effort_minutes + ' min' : Math.round(selected.effort_minutes/60*10)/10 + ' hr'}</span></div>}
+                </div>
+
+                {/* Fix instructions */}
+                <div style={{padding:'1.5rem'}}>
+                  <div style={{fontSize:'0.75rem', fontWeight:600, color:'#666', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.75rem'}}>What to do</div>
+                  <div style={{background:'#111', border:'1px solid #2a2a2a', borderRadius:'8px', padding:'1rem 1.25rem', lineHeight:'1.7', fontSize:'0.95rem', color:'#e0e0e0'}}>
+                    {selected.fix || 'No specific fix instructions recorded for this finding.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -1845,8 +1881,8 @@
         { id:'rankmap', label:'Rank Map', badge: latestRankMap ? latestRankMap.top_3_pct+'%' : null },
         { id:'core30', label:'Core 30', badge: missingPages > 0 ? missingPages : null },
         { id:'findings', label:'Findings', badge: openFindings || null },
-        { id:'geo', label:'GEO' },
-        { id:'ai', label:'AI' },
+        { id:'geo', label:'GEO', badge: latestGeo.length > 0 ? Math.round(latestGeo.filter(g=>g.signal_value).length/latestGeo.length*100)+'%' : null },
+        { id:'ai', label:'AI', badge: aiMentions.length > 0 ? Math.round(aiMentions.filter(m=>m.mentioned).length/aiMentions.length*100)+'%' : null },
         { id:'links', label:'Link Checklist', badge: pendingLinks || null },
         { id:'directories', label:'Directories', badge: dirNeedsAtt || null },
         { id:'competitors', label:'Competitors' },
