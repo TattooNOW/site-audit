@@ -331,7 +331,7 @@
     }
 
     /* ── Tab: Overview ───────────────────────────────────── */
-    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, lastAuditDate, locationId, siteDomain, billingRecords, apifyResults }) {
+    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, apifyResults }) {
       const seo = scores.seo?.score ?? '\u2014';
       const ai = scores.ai_discoverability?.score ?? '\u2014';
       const geo = scores.geo_readiness?.score ?? '\u2014';
@@ -515,38 +515,6 @@
             </section>
           )}
 
-          {/* Billing Summary */}
-          {billingRecords.length > 0 && (
-            <section className="card" style={{marginBottom:'2rem', border:'1px solid #333'}}>
-              <h3 style={{marginTop:0}}>Audit Billing</h3>
-              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px,1fr))', gap:'1rem'}}>
-                <div>
-                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Audits</div>
-                  <div style={{fontSize:'1.5rem', fontWeight:700}}>{billingRecords.length}</div>
-                </div>
-                <div>
-                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Charged</div>
-                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#4ade80'}}>${billingRecords.reduce((s, b) => s + Number(b.charge_amount || 0), 0).toFixed(2)}</div>
-                </div>
-                <div>
-                  <div style={{color:'#888', fontSize:'0.8rem'}}>Total Cost</div>
-                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#f87171'}}>${billingRecords.reduce((s, b) => s + Number(b.total_cost || 0), 0).toFixed(2)}</div>
-                </div>
-                <div>
-                  <div style={{color:'#888', fontSize:'0.8rem'}}>Margin</div>
-                  <div style={{fontSize:'1.5rem', fontWeight:700, color:'#fbbf24'}}>${billingRecords.reduce((s, b) => s + Number(b.margin || 0), 0).toFixed(2)}</div>
-                </div>
-              </div>
-              {billingRecords.length > 0 && (
-                <div style={{marginTop:'1rem', fontSize:'0.8rem', color:'#666'}}>
-                  Latest: {billingRecords[0].audit_date} &bull; Status: {billingRecords[0].billing_status}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Run Audit / Refresh Data */}
-          <RunAuditButton locationId={locationId} lastAuditDate={lastAuditDate} defaults={{website: siteDomain}} />
         </div>
       );
     }
@@ -1313,9 +1281,10 @@
     }
 
     /* ── Settings Panel ──────────────────────────────────── */
-    function SettingsPanel({ site, open, onClose }) {
+    function SettingsPanel({ site, open, onClose, billingRecords, locationId, lastAuditDate, onAuditStarted }) {
       const [saving, setSaving] = React.useState(false);
       const [saved, setSaved] = React.useState(false);
+      const [auditStatus, setAuditStatus] = React.useState('idle');
       const social = site.social_links || {};
       const [form, setForm] = React.useState({
         domain: site.domain || '',
@@ -1352,9 +1321,25 @@
         setSaving(false);
       };
 
+      const runAudit = () => {
+        if (!form.domain) return;
+        setAuditStatus('running');
+        fetch(AUDIT_WEBHOOK, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId, domain: form.domain, address: form.address + ', ' + form.city + ', ' + form.state, phone: form.phone })
+        }).then(res => console.log('Webhook response:', res.status))
+          .catch(e => console.error('Audit trigger failed:', e));
+        if (onAuditStarted) onAuditStarted();
+      };
+
       if (!open) return null;
 
-      const inputStyle = { background:'#111', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.6rem', borderRadius:'4px', width:'100%', fontFamily:'Roboto, sans-serif', fontSize:'0.85rem' };
+      const totalAudits = billingRecords.length;
+      const totalCharged = billingRecords.reduce((s, b) => s + Number(b.charge_amount || 0), 0);
+      const totalCost = billingRecords.reduce((s, b) => s + Number(b.total_cost || 0), 0);
+
+      const inputStyle = { background:'#111', color:'#fafafa', border:'1px solid #333', padding:'0.4rem 0.6rem', borderRadius:'4px', width:'100%', fontFamily:'Roboto, sans-serif', fontSize:'0.85rem', boxSizing:'border-box' };
       const labelStyle = { color:'#888', fontSize:'0.75rem', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.25rem', display:'block' };
 
       return (
@@ -1364,6 +1349,38 @@
             <button onClick={onClose} style={{background:'none', border:'none', color:'#888', fontSize:'1.2rem', cursor:'pointer'}}>&times;</button>
           </div>
 
+          {/* ── Audit Reports & Billing ─────────────────── */}
+          <div style={{background:'#0a0a0a', border:'1px solid #333', borderRadius:'8px', padding:'1rem', marginBottom:'1.5rem'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem'}}>
+              <div>
+                <div style={{fontSize:'0.7rem', color:'#888', textTransform:'uppercase', letterSpacing:'0.5px'}}>Reports Used</div>
+                <div style={{fontSize:'1.8rem', fontWeight:700, color:'#fafafa'}}>{totalAudits}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:'0.7rem', color:'#888', textTransform:'uppercase', letterSpacing:'0.5px'}}>Total Charged</div>
+                <div style={{fontSize:'1.8rem', fontWeight:700, color:'#4ade80'}}>${totalCharged.toFixed(2)}</div>
+              </div>
+            </div>
+            <div style={{fontSize:'0.75rem', color:'#555', borderTop:'1px solid #222', paddingTop:'0.5rem'}}>
+              {lastAuditDate ? `Last run: ${lastAuditDate}` : 'No audits yet'} &bull; $2.00/report
+            </div>
+          </div>
+
+          {/* ── Run Audit ──────────────────────────────── */}
+          <button onClick={auditStatus !== 'running' ? runAudit : undefined}
+            disabled={auditStatus === 'running' || !form.domain}
+            style={{
+              width:'100%', padding:'0.65rem', marginBottom:'1.5rem',
+              background: auditStatus === 'running' ? '#333' : '#EA9320',
+              color: auditStatus === 'running' ? '#888' : '#000',
+              border:'none', borderRadius:'6px', fontWeight:700, cursor: auditStatus === 'running' ? 'wait' : 'pointer',
+              fontSize:'0.9rem', fontFamily:'Roboto Slab, serif',
+            }}>
+            {auditStatus === 'running' ? 'Audit Running...' : 'Run Audit'}
+          </button>
+
+          {/* ── Business Info ──────────────────────────── */}
+          <h4 style={{color:'#EA9320', margin:'0 0 0.75rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Business Info</h4>
           <div style={{marginBottom:'1rem'}}>
             <label style={labelStyle}>Domain</label>
             <input style={inputStyle} value={form.domain} onChange={e => set('domain', e.target.value)} />
@@ -1610,7 +1627,7 @@
               color: settingsOpen ? '#EA9320' : '#888', cursor:'pointer', fontSize:'1.1rem', marginTop:'0.25rem',
             }}>&#9881;</button>
           </header>
-          <SettingsPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          <SettingsPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} />
 
           <nav className="tab-bar">
             {tabs.map(t => (
@@ -1621,7 +1638,7 @@
             ))}
           </nav>
 
-          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} lastAuditDate={latest.audit_date} locationId={locationId} siteDomain={site.domain} billingRecords={billingRecords} apifyResults={latest.apify_results || {}} />}
+          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} />}
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
