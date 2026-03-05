@@ -2233,96 +2233,112 @@
                     }} />
                   )}
 
-                  <h4 style={{color:'#EA9320', margin:'0 0 1rem', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Audit History ({audits.length} runs)</h4>
-                  {[...audits].reverse().map((a, idx) => {
-                    const sources = buildRunSources(a);
-                    const scores = a.scores || {};
+                  {/* Unified chronological timeline: audits + rank map scans */}
+                  {(() => {
+                    // Build unified timeline items
+                    const timeline = [];
+                    audits.forEach(a => {
+                      timeline.push({ type: 'audit', date: a.created_at, data: a });
+                    });
+                    (rmScans || []).forEach(rm => {
+                      timeline.push({ type: 'rankmap', date: rm.created_at || rm.scan_date, data: rm });
+                    });
+                    // Sort chronologically (newest first)
+                    timeline.sort((a, b) => new Date(b.date) - new Date(a.date));
+
                     return (
-                      <div key={a.id} style={{background:'#0a0a0a', border:'1px solid #222', borderRadius:'8px', padding:'1rem', marginBottom:'1rem'}}>
-                        {/* Header: date/time + score */}
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem'}}>
-                          <div>
-                            <span style={{fontWeight:700, fontSize:'1.05rem'}}>{fmtDateTime(a.created_at)}</span>
-                            <div style={{display:'flex', gap:'0.75rem', marginTop:'0.25rem', fontSize:'0.8rem'}}>
-                              <span style={{color:'#888'}}>{a.audit_type || 'full'} audit</span>
-                              {a.triggered_by && <span style={{color:'#555'}}>via {a.triggered_by}</span>}
-                              {a.crawler_source && <span style={{color:'#555'}}>{a.crawler_source}</span>}
-                            </div>
-                          </div>
-                          <div style={{
-                            width:'48px', height:'48px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center',
-                            fontWeight:700, fontSize:'1.1rem', flexShrink:0,
-                            background: (scores.overall||0) >= 70 ? 'rgba(74,222,128,0.15)' : (scores.overall||0) >= 40 ? 'rgba(234,147,32,0.15)' : 'rgba(248,113,113,0.15)',
-                            color: (scores.overall||0) >= 70 ? '#4ade80' : (scores.overall||0) >= 40 ? '#EA9320' : '#f87171',
-                            border: '2px solid ' + ((scores.overall||0) >= 70 ? '#4ade80' : (scores.overall||0) >= 40 ? '#EA9320' : '#f87171'),
-                          }}>{scores.overall || '—'}</div>
-                        </div>
-                        {/* Score breakdown */}
-                        <div style={{display:'flex', gap:'1rem', marginBottom:'0.75rem', fontSize:'0.8rem', flexWrap:'wrap'}}>
-                          {scores.seo && <span style={{color:'#60a5fa'}}>SEO {scores.seo.score}</span>}
-                          {scores.geo_readiness && <span style={{color:'#f97316'}}>GEO {scores.geo_readiness.score}</span>}
-                          {scores.ai_discoverability && <span style={{color:'#a78bfa'}}>AI {scores.ai_discoverability.score}</span>}
-                        </div>
-                        {/* Data Sources Table */}
-                        <div style={{borderTop:'1px solid #1a1a1a', paddingTop:'0.75rem'}}>
-                          <div style={{fontSize:'0.7rem', color:'#666', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.5rem'}}>API Data Sources</div>
-                          <table style={{width:'100%', fontSize:'0.8rem'}}>
-                            <thead><tr>
-                              <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>Section</th>
-                              <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>API Source</th>
-                              <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>Result</th>
-                            </tr></thead>
-                            <tbody>
-                              {sources.map((s, i) => (
-                                <tr key={i} style={{borderBottom:'1px solid #1a1a1a'}}>
-                                  <td style={{padding:'5px 8px', fontWeight:600, color:'#ccc', whiteSpace:'nowrap'}}>{s.section}</td>
-                                  <td style={{padding:'5px 8px'}}>
-                                    <div style={{color:'#EA9320', fontWeight:500}}>{s.api}</div>
-                                    <div style={{color:'#555', fontSize:'0.7rem'}}>{s.detail}</div>
-                                  </td>
-                                  <td style={{padding:'5px 8px', color:'#aaa', whiteSpace:'nowrap'}}>
-                                    {s.link ? <a href={s.link} target="_blank" style={{color:'#EA9320', fontSize:'0.75rem'}}>view</a> : null}
-                                    {s.result && <div>{s.result}</div>}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                      <div>
+                        <h4 style={{color:'#EA9320', margin:'0 0 1rem', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>
+                          Report Timeline ({timeline.length} events)
+                        </h4>
+                        {timeline.map((item, idx) => {
+                          if (item.type === 'audit') {
+                            const a = item.data;
+                            const sources = buildRunSources(a);
+                            const scores = a.scores || {};
+                            return (
+                              <div key={'a-'+a.id} style={{background:'#0a0a0a', border:'1px solid #222', borderRadius:'8px', padding:'1rem', marginBottom:'1rem', borderLeft:'3px solid #EA9320'}}>
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem'}}>
+                                  <div>
+                                    <span className="pill" style={{background:'rgba(234,147,32,0.15)', color:'#EA9320', marginRight:'0.5rem', fontSize:'0.7rem'}}>AUDIT</span>
+                                    <span style={{fontWeight:700, fontSize:'1.05rem'}}>{fmtDateTime(a.created_at)}</span>
+                                    <div style={{display:'flex', gap:'0.75rem', marginTop:'0.25rem', fontSize:'0.8rem'}}>
+                                      <span style={{color:'#888'}}>{a.audit_type || 'full'} audit</span>
+                                      {a.triggered_by && <span style={{color:'#555'}}>via {a.triggered_by}</span>}
+                                      {a.crawler_source && <span style={{color:'#555'}}>{a.crawler_source}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{
+                                    width:'48px', height:'48px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center',
+                                    fontWeight:700, fontSize:'1.1rem', flexShrink:0,
+                                    background: (scores.overall||0) >= 70 ? 'rgba(74,222,128,0.15)' : (scores.overall||0) >= 40 ? 'rgba(234,147,32,0.15)' : 'rgba(248,113,113,0.15)',
+                                    color: (scores.overall||0) >= 70 ? '#4ade80' : (scores.overall||0) >= 40 ? '#EA9320' : '#f87171',
+                                    border: '2px solid ' + ((scores.overall||0) >= 70 ? '#4ade80' : (scores.overall||0) >= 40 ? '#EA9320' : '#f87171'),
+                                  }}>{scores.overall || '\u2014'}</div>
+                                </div>
+                                <div style={{display:'flex', gap:'1rem', marginBottom:'0.75rem', fontSize:'0.8rem', flexWrap:'wrap'}}>
+                                  {scores.seo && <span style={{color:'#60a5fa'}}>SEO {scores.seo.score}</span>}
+                                  {scores.geo_readiness && <span style={{color:'#f97316'}}>GEO {scores.geo_readiness.score}</span>}
+                                  {scores.ai_discoverability && <span style={{color:'#a78bfa'}}>AI {scores.ai_discoverability.score}</span>}
+                                </div>
+                                <div style={{borderTop:'1px solid #1a1a1a', paddingTop:'0.75rem'}}>
+                                  <div style={{fontSize:'0.7rem', color:'#666', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.5rem'}}>API Data Sources</div>
+                                  <table style={{width:'100%', fontSize:'0.8rem'}}>
+                                    <thead><tr>
+                                      <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>Section</th>
+                                      <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>API Source</th>
+                                      <th style={{textAlign:'left', padding:'4px 8px', borderBottom:'1px solid #222', fontSize:'0.7rem', color:'#666'}}>Result</th>
+                                    </tr></thead>
+                                    <tbody>
+                                      {sources.map((s, i) => (
+                                        <tr key={i} style={{borderBottom:'1px solid #1a1a1a'}}>
+                                          <td style={{padding:'5px 8px', fontWeight:600, color:'#ccc', whiteSpace:'nowrap'}}>{s.section}</td>
+                                          <td style={{padding:'5px 8px'}}>
+                                            <div style={{color:'#EA9320', fontWeight:500}}>{s.api}</div>
+                                            <div style={{color:'#555', fontSize:'0.7rem'}}>{s.detail}</div>
+                                          </td>
+                                          <td style={{padding:'5px 8px', color:'#aaa', whiteSpace:'nowrap'}}>
+                                            {s.link ? <a href={s.link} target="_blank" style={{color:'#EA9320', fontSize:'0.75rem'}}>view</a> : null}
+                                            {s.result && <div>{s.result}</div>}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          } else {
+                            const rm = item.data;
+                            return (
+                              <div key={'rm-'+rm.id} style={{background:'#0a0a0a', border:'1px solid #222', borderRadius:'8px', padding:'1rem', marginBottom:'1rem', borderLeft:'3px solid #60a5fa'}}>
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem'}}>
+                                  <div>
+                                    <span className="pill" style={{background:'rgba(96,165,250,0.15)', color:'#60a5fa', marginRight:'0.5rem', fontSize:'0.7rem'}}>RANK MAP</span>
+                                    <span style={{fontWeight:700, fontSize:'1.05rem'}}>{fmtDateTime(rm.created_at || rm.scan_date)}</span>
+                                    <span style={{color:'#888', fontSize:'0.8rem', marginLeft:'0.75rem'}}>"{rm.keyword}"</span>
+                                  </div>
+                                  <span style={{color:'#EA9320', fontWeight:700}}>{rm.top_3_pct}% top-3</span>
+                                </div>
+                                <table style={{width:'100%', fontSize:'0.8rem'}}>
+                                  <tbody>
+                                    <tr style={{borderBottom:'1px solid #1a1a1a'}}>
+                                      <td style={{padding:'4px 8px', fontWeight:600, color:'#ccc'}}>Rank Map</td>
+                                      <td style={{padding:'4px 8px'}}>
+                                        <div style={{color:'#EA9320', fontWeight:500}}>DataForSEO Maps API</div>
+                                        <div style={{color:'#555', fontSize:'0.7rem'}}>{rm.grid_size} grid, {rm.total_points} API calls, {rm.grid_radius_mi || 5}mi radius</div>
+                                      </td>
+                                      <td style={{padding:'4px 8px', color:'#aaa'}}>Avg #{rm.avg_rank || '\u2014'}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            );
+                          }
+                        })}
                       </div>
                     );
-                  })}
-
-                  {/* Rank Map Scans */}
-                  {rmScans.length > 0 && (
-                    <div style={{marginTop:'1.5rem'}}>
-                      <h4 style={{color:'#EA9320', margin:'0 0 1rem', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Rank Map Scans ({rmScans.length})</h4>
-                      {rmScans.map(rm => (
-                        <div key={rm.id} style={{background:'#0a0a0a', border:'1px solid #222', borderRadius:'8px', padding:'1rem', marginBottom:'0.75rem'}}>
-                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem'}}>
-                            <div>
-                              <span style={{fontWeight:700}}>{rm.scan_date}</span>
-                              {rm.created_at && <span style={{color:'#555', fontSize:'0.75rem', marginLeft:'0.75rem'}}>{fmtDateTime(rm.created_at)}</span>}
-                              <span style={{color:'#888', fontSize:'0.8rem', marginLeft:'0.75rem'}}>"{rm.keyword}"</span>
-                            </div>
-                            <span style={{color:'#EA9320', fontWeight:700}}>{rm.top_3_pct}% top-3</span>
-                          </div>
-                          <table style={{width:'100%', fontSize:'0.8rem'}}>
-                            <tbody>
-                              <tr style={{borderBottom:'1px solid #1a1a1a'}}>
-                                <td style={{padding:'4px 8px', fontWeight:600, color:'#ccc'}}>Rank Map</td>
-                                <td style={{padding:'4px 8px'}}>
-                                  <div style={{color:'#EA9320', fontWeight:500}}>DataForSEO Local Finder</div>
-                                  <div style={{color:'#555', fontSize:'0.7rem'}}>{rm.grid_size} grid, {rm.total_points} API calls, {rm.grid_radius_mi || 5}mi radius</div>
-                                </td>
-                                <td style={{padding:'4px 8px', color:'#aaa'}}>Avg #{rm.avg_rank || '—'}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  })()}
                 </div>
               )}
 
