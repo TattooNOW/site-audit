@@ -1622,10 +1622,12 @@
               <h1 style={{margin:'0 0 0.25rem 0'}}>{site.business_name}</h1>
               <p style={{margin:0, color:'#888'}}>{site.domain} &bull; {site.target_city||site.city}, {site.target_state||site.state} &bull; Last audit: {latest.audit_date}</p>
             </div>
-            <button onClick={() => setSettingsOpen(!settingsOpen)} title="Site Settings" style={{
-              background:'none', border:'1px solid #333', borderRadius:'6px', padding:'0.4rem 0.6rem',
-              color: settingsOpen ? '#EA9320' : '#888', cursor:'pointer', fontSize:'1.1rem', marginTop:'0.25rem',
-            }}>&#9881;</button>
+            <button onClick={() => setSettingsOpen(!settingsOpen)} style={{
+              background: settingsOpen ? '#EA9320' : 'none', border:'1px solid ' + (settingsOpen ? '#EA9320' : '#333'),
+              borderRadius:'6px', padding:'0.5rem 1rem',
+              color: settingsOpen ? '#000' : '#888', cursor:'pointer', fontSize:'0.85rem', fontWeight:600,
+              fontFamily:'Roboto, sans-serif', marginTop:'0.25rem', transition:'all 0.2s',
+            }}>{settingsOpen ? 'Close' : 'Settings'}</button>
           </header>
           <SettingsPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} />
 
