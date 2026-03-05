@@ -1218,6 +1218,9 @@
       const [selected, setSelected] = React.useState(null);
 
       const categories = [...new Set(latestFindings.map(f => f.category))].sort();
+      const openFindings = latestFindings.filter(f => f.status === 'open').length;
+      const critFindings = latestFindings.filter(f => f.severity === 'critical' && f.status !== 'fixed').length;
+      const fixedFindings = latestFindings.filter(f => f.status === 'fixed').length;
 
       const filtered = latestFindings
         .filter(f => filterSev === 'all' || f.severity === filterSev)
@@ -1232,6 +1235,26 @@
 
       return (
         <div>
+          {/* Summary cards */}
+          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
+            <div className="score-card" style={{borderTop: openFindings > 0 ? '3px solid #f87171' : '3px solid #4ade80'}}>
+              <h3>Open Issues</h3>
+              <div className="value" style={{color: openFindings > 0 ? '#f87171' : '#4ade80'}}>{openFindings}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{latestFindings.length} total findings</div>
+            </div>
+            <div className="score-card" style={{borderTop: critFindings > 0 ? '3px solid #ef4444' : '3px solid #4ade80'}}>
+              <h3>Critical</h3>
+              <div className="value" style={{color: critFindings > 0 ? '#ef4444' : '#4ade80'}}>{critFindings}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{critFindings > 0 ? 'needs attention' : 'all clear'}</div>
+            </div>
+            <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
+              <h3>Fixed</h3>
+              <div className="value" style={{color:'#4ade80'}}>{fixedFindings}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>issues resolved</div>
+            </div>
+          </section>
+
+          {/* Filters */}
           <div style={{display:'flex', gap:'0.75rem', marginBottom:'1rem', flexWrap:'wrap'}}>
             <select className="filter" value={filterSev} onChange={e=>setFilterSev(e.target.value)}>
               <option value="all">All Severities</option>
@@ -1252,26 +1275,32 @@
             </select>
             <span style={{color:'#888', alignSelf:'center', fontSize:'0.85rem'}}>{filtered.length} finding{filtered.length!==1?'s':''}</span>
           </div>
-          <table>
-            <thead><tr><th>Sev</th><th>Title</th><th>Category</th><th>Layer</th><th>Page</th><th>Status</th><th>Effort</th><th>Age</th></tr></thead>
-            <tbody>
-            {filtered.map(f => {
-              const age = Math.floor((new Date() - new Date(f.still_open_since || f.first_detected || f.created_at)) / 86400000);
-              return (
-                <tr key={f.id} onClick={() => setSelected(f)} style={{cursor:'pointer', background: f.status==='fixed'?'rgba(74,222,128,0.06)':f.status==='in_progress'?'rgba(251,191,36,0.08)':'rgba(248,113,113,0.08)'}}>
-                  <td><span className="pill" style={{background:`${sevColor(f.severity)}22`, color:sevColor(f.severity)}}>{f.severity}</span></td>
-                  <td style={{fontWeight:500}}>{f.title}</td>
-                  <td style={{color:'#888'}}>{f.category}</td>
-                  <td style={{color:'#888'}}>{f.layer != null ? `L${f.layer}` : '\u2014'}</td>
-                  <td style={{fontFamily:'monospace', fontSize:'0.8rem'}}>{f.page || '\u2014'}</td>
-                  <td>{f.status}</td>
-                  <td>{f.effort_minutes ? f.effort_minutes+'m' : '\u2014'}</td>
-                  <td style={{color:'#888'}}>{age}d</td>
-                </tr>
-              );
-            })}
-            </tbody>
-          </table>
+
+          {/* Detail table */}
+          <section className="card" style={{border:'1px solid #222', padding:0, overflow:'hidden'}}>
+            <table style={{margin:0}}>
+              <thead><tr><th>Sev</th><th>Title</th><th>Category</th><th>Status</th><th>Effort</th><th>Age</th></tr></thead>
+              <tbody>
+              {filtered.map(f => {
+                const age = Math.floor((new Date() - new Date(f.still_open_since || f.first_detected || f.created_at)) / 86400000);
+                return (
+                  <tr key={f.id} onClick={() => setSelected(f)} style={{cursor:'pointer', background: f.status==='fixed'?'rgba(74,222,128,0.06)':f.status==='in_progress'?'rgba(251,191,36,0.08)':'rgba(248,113,113,0.08)'}}>
+                    <td><span className="pill" style={{background:`${sevColor(f.severity)}22`, color:sevColor(f.severity)}}>{f.severity}</span></td>
+                    <td style={{fontWeight:500}}>{f.title}</td>
+                    <td style={{color:'#888'}}>{f.category}</td>
+                    <td>
+                      <span className="pill" style={{background: f.status==='fixed'?'rgba(74,222,128,0.15)':f.status==='in_progress'?'rgba(251,191,36,0.15)':'rgba(248,113,113,0.15)', color: f.status==='fixed'?'#4ade80':f.status==='in_progress'?'#fbbf24':'#f87171'}}>
+                        {statusIcon(f.status)} {f.status}
+                      </span>
+                    </td>
+                    <td>{f.effort_minutes ? f.effort_minutes+'m' : '\u2014'}</td>
+                    <td style={{color:'#888'}}>{age}d</td>
+                  </tr>
+                );
+              })}
+              </tbody>
+            </table>
+          </section>
 
           {/* Finding Detail Modal */}
           {selected && (
@@ -1328,29 +1357,22 @@
         gbp_embed: 'NAP & Contact',
       };
       const groupOrder = ['Schema & Structured Data', 'On-Page Local Signals', 'NAP & Contact'];
-      const groupColors = {
-        'Schema & Structured Data': '#a78bfa',
-        'On-Page Local Signals': '#fbbf24',
-        'NAP & Contact': '#60a5fa',
-      };
 
-      const grouped = {};
-      latestGeo.forEach(g => {
-        const group = groupMap[g.signal_name] || 'Other';
-        if (!grouped[group]) grouped[group] = [];
-        grouped[group].push(g);
+      // Sort: failing first within each group
+      const sorted = [...latestGeo].sort((a, b) => {
+        const ga = groupOrder.indexOf(groupMap[a.signal_name] || 'Other');
+        const gb = groupOrder.indexOf(groupMap[b.signal_name] || 'Other');
+        if (ga !== gb) return (ga === -1 ? 99 : ga) - (gb === -1 ? 99 : gb);
+        return (a.signal_value ? 1 : 0) - (b.signal_value ? 1 : 0);
       });
-
-      const sortedGroups = groupOrder.filter(g => grouped[g]).concat(
-        Object.keys(grouped).filter(g => !groupOrder.includes(g))
-      );
 
       return (
         <div>
-          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
+          {/* Summary cards */}
+          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
             <div className="score-card" style={{borderTop:'3px solid #f97316'}}>
               <h3>GEO Score</h3>
-              <div className="value" style={{color:'#f97316'}}>{pct}</div>
+              <div className="value" style={{color:'#f97316'}}>{pct}%</div>
               <div style={{color:'#888', fontSize:'0.85rem'}}>{passing}/{latestGeo.length} passing</div>
             </div>
             <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
@@ -1365,42 +1387,28 @@
             </div>
           </section>
 
-          {sortedGroups.map(groupName => {
-            const signals = grouped[groupName];
-            const groupPass = signals.filter(g => g.signal_value).length;
-            const gc = groupColors[groupName] || '#888';
-
-            return (
-              <section key={groupName} className="card" style={{marginBottom:'1.5rem', border:'1px solid #222'}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
-                  <h3 style={{margin:0, color: gc}}>{groupName}</h3>
-                  <span style={{color:'#888', fontSize:'0.85rem'}}>{groupPass}/{signals.length} passing</span>
-                </div>
-                <div style={{display:'flex', flexDirection:'column', gap:'0.75rem'}}>
-                  {signals.map(g => (
-                    <div key={g.id} style={{background:'#111', padding:'1rem', borderRadius:'6px', borderLeft: g.signal_value ? '3px solid #4ade80':'3px solid #f87171'}}>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                        <div style={{fontWeight:600, textTransform:'capitalize', fontSize:'0.95rem'}}>{g.signal_name.replace(/_/g,' ')}</div>
-                        <span className="pill" style={{background: g.signal_value ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)', color: g.signal_value ? '#4ade80' : '#f87171', flexShrink:0}}>
-                          {g.signal_value ? '\u2713 Found' : '\u2717 Missing'}
-                        </span>
-                      </div>
-                      {g.details && (
-                        <div style={{marginTop:'0.5rem', padding:'0.5rem 0.75rem', background:'#0a0a0a', borderRadius:'4px', fontFamily:'monospace', fontSize:'0.8rem', color: g.signal_value ? '#9ca3af' : '#fca5a5', wordBreak:'break-word'}}>
-                          {g.details}
-                        </div>
-                      )}
-                      {g.recommendation && (
-                        <div style={{marginTop:'0.5rem', fontSize:'0.85rem', color:'#d1d5db', lineHeight:'1.4'}}>
-                          <span style={{color:'#fbbf24', fontWeight:600, marginRight:'0.35rem'}}>Fix:</span>{g.recommendation}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            );
-          })}
+          {/* Detail table */}
+          <section className="card" style={{border:'1px solid #222', padding:0, overflow:'hidden'}}>
+            <table style={{margin:0}}>
+              <thead><tr><th>Signal</th><th>Group</th><th>Status</th><th>Details / Fix</th></tr></thead>
+              <tbody>
+              {sorted.map(g => (
+                <tr key={g.id} style={{background: g.signal_value ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.08)'}}>
+                  <td style={{fontWeight:500, textTransform:'capitalize'}}>{g.signal_name.replace(/_/g,' ')}</td>
+                  <td style={{color:'#888', fontSize:'0.85rem'}}>{groupMap[g.signal_name] || 'Other'}</td>
+                  <td>
+                    <span className="pill" style={{background: g.signal_value ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)', color: g.signal_value ? '#4ade80' : '#f87171'}}>
+                      {g.signal_value ? '\u2713 Found' : '\u2717 Missing'}
+                    </span>
+                  </td>
+                  <td style={{fontSize:'0.85rem', maxWidth:'400px', color: g.signal_value ? '#9ca3af' : '#fca5a5'}}>
+                    {g.signal_value ? (g.details || 'Detected on page') : (g.recommendation || g.details || 'Signal not detected')}
+                  </td>
+                </tr>
+              ))}
+              </tbody>
+            </table>
+          </section>
         </div>
       );
     }
@@ -1569,8 +1577,8 @@
       const total = aiMentions.length;
       const mentioned = aiMentions.filter(m => m.mentioned).length;
       const aiPct = total > 0 ? Math.round(mentioned / total * 100) : 0;
+      const notMentioned = total - mentioned;
       const probeDate = aiMentions[0]?.probe_date || aiMentions[0]?.created_at?.split('T')[0] || '';
-      const probeTime = aiMentions[0]?.created_at ? new Date(aiMentions[0].created_at).toLocaleTimeString() : '';
 
       // Engine breakdown
       const engines = [...new Set(aiMentions.map(m => m.engine))];
@@ -1590,36 +1598,43 @@
 
       return (
         <div>
-          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap', alignItems:'flex-start'}}>
+          {/* Summary cards */}
+          <section style={{display:'flex', gap:'1rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
             <div className="score-card" style={{borderTop:`3px solid ${aiPct >= 60 ? '#4ade80' : aiPct >= 30 ? '#fbbf24' : '#f87171'}`}}>
               <h3>AI Score</h3>
               <div className="value" style={{color: aiPct >= 60 ? '#4ade80' : aiPct >= 30 ? '#fbbf24' : '#f87171'}}>{aiPct}%</div>
               <div style={{color:'#888', fontSize:'0.85rem'}}>{mentioned}/{total} probes</div>
             </div>
-            {byEngine.map(e => (
-              <div key={e.engine} className="score-card" style={{borderTop:'3px solid #555'}}>
-                <h3 style={{textTransform:'capitalize'}}>{e.engine}</h3>
-                <div className="value">{e.mentioned}<span style={{fontSize:'1rem', color:'#888'}}>/{e.total}</span></div>
-                <div style={{color:'#888', fontSize:'0.85rem'}}>{Math.round(e.mentioned/e.total*100)}% found</div>
-              </div>
-            ))}
+            <div className="score-card" style={{borderTop:'3px solid #4ade80'}}>
+              <h3>Mentioned</h3>
+              <div className="value" style={{color:'#4ade80'}}>{mentioned}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>probes found you</div>
+            </div>
+            <div className="score-card" style={{borderTop: notMentioned > 0 ? '3px solid #f87171' : '3px solid #4ade80'}}>
+              <h3>Not Found</h3>
+              <div className="value" style={{color: notMentioned > 0 ? '#f87171' : '#4ade80'}}>{notMentioned}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{notMentioned > 0 ? 'probes missed you' : 'all clear'}</div>
+            </div>
           </section>
 
-          {probeDate && <p style={{color:'#666', fontSize:'0.8rem', marginBottom:'1rem'}}>Probed: {probeDate}{probeTime ? ` at ${probeTime}` : ''}</p>}
+          {probeDate && <p style={{color:'#666', fontSize:'0.8rem', marginBottom:'0.75rem'}}>Last probed: {probeDate}</p>}
 
-          <table>
-            <thead><tr><th>Engine</th><th>Query</th><th>Mentioned?</th><th>NAP</th><th>Sentiment</th><th>AI Results (ranked)</th></tr></thead>
-            <tbody>
-              {aiMentions.map(m => {
-                const clip = m.mentioned ? m.mention_text : (m.raw_response ? m.raw_response.substring(0, 200) : null);
-                return (
-                  <React.Fragment key={m.id}>
-                    <tr style={{background: m.mentioned?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)', borderBottom: clip ? 'none' : undefined}}>
+          {/* Detail table */}
+          <section className="card" style={{border:'1px solid #222', padding:0, overflow:'hidden', marginBottom:'1.5rem'}}>
+            <table style={{margin:0}}>
+              <thead><tr><th>Engine</th><th>Query</th><th>Status</th><th>Sentiment</th><th>AI Results (ranked)</th></tr></thead>
+              <tbody>
+                {aiMentions.map(m => {
+                  return (
+                    <tr key={m.id} style={{background: m.mentioned?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
                       <td style={{textTransform:'capitalize'}}>{m.engine}</td>
-                      <td>{m.query}</td>
-                      <td style={{color: m.mentioned?'#4ade80':'#f87171'}}>{m.mentioned?'Yes':'No'}</td>
-                      <td style={{color: m.nap_accurate?'#4ade80':m.nap_accurate===false?'#f87171':'#888'}}>{m.nap_accurate==null?'\u2014':m.nap_accurate?'Yes':'No'}</td>
-                      <td>{m.sentiment||'\u2014'}</td>
+                      <td style={{fontSize:'0.85rem'}}>{m.query}</td>
+                      <td>
+                        <span className="pill" style={{background: m.mentioned ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)', color: m.mentioned ? '#4ade80' : '#f87171'}}>
+                          {m.mentioned ? '\u2713 Found' : '\u2717 Not found'}
+                        </span>
+                      </td>
+                      <td style={{color:'#aaa'}}>{m.sentiment||'\u2014'}</td>
                       <td style={{fontSize:'0.8rem', maxWidth:'300px'}}>
                         {m.competitors && m.competitors.length > 0 ? m.competitors.map((c, ci) => {
                           const nameLower = (businessName || '').toLowerCase();
@@ -1629,21 +1644,14 @@
                         }) : '\u2014'}
                       </td>
                     </tr>
-                    {clip && (
-                      <tr style={{background: m.mentioned?'rgba(74,222,128,0.03)':'rgba(248,113,113,0.04)'}}>
-                        <td colSpan={6} style={{fontSize:'0.75rem', color:'#777', padding:'0.25rem 1rem 0.6rem 1rem', borderTop:'none', fontStyle:'italic'}}>
-                          {clip}{clip.length >= 200 ? '...' : ''}
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
 
           {competitorList.length > 0 && (
-            <section className="card" style={{marginTop:'1.5rem'}}>
+            <section className="card" style={{border:'1px solid #222'}}>
               <h3 style={{marginTop:0}}>Competitors Appearing in AI Results</h3>
               <div style={{display:'flex', gap:'0.5rem', flexWrap:'wrap'}}>
                 {competitorList.map(([name, count]) => (
@@ -1663,31 +1671,64 @@
       const [sub, setSub] = React.useState('findings');
 
       const openFindings = latestFindings.filter(f => f.status === 'open').length;
-      const geoPct = latestGeo.length > 0 ? Math.round(latestGeo.filter(g => g.signal_value).length / latestGeo.length * 100) : null;
-      const aiPct = aiMentions.length > 0 ? Math.round(aiMentions.filter(m => m.mentioned).length / aiMentions.length * 100) : null;
+      const fixedFindings = latestFindings.filter(f => f.status === 'fixed').length;
+      const geoPass = latestGeo.filter(g => g.signal_value).length;
+      const geoPct = latestGeo.length > 0 ? Math.round(geoPass / latestGeo.length * 100) : null;
+      const aiMentioned = aiMentions.filter(m => m.mentioned).length;
+      const aiPct = aiMentions.length > 0 ? Math.round(aiMentioned / aiMentions.length * 100) : null;
 
-      const pill = (id, label, badge, color) => (
-        <button key={id} onClick={() => setSub(id)} style={{
-          padding:'0.4rem 0.9rem', borderRadius:'20px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
-          background: sub === id ? (color || '#EA9320') : 'transparent',
-          color: sub === id ? '#000' : '#aaa',
-          border: '1px solid ' + (sub === id ? (color || '#EA9320') : '#333'),
-          cursor:'pointer', fontWeight: sub === id ? 700 : 400, display:'flex', alignItems:'center', gap:'0.4rem',
-        }}>
-          {label}
-          {badge != null && <span style={{
-            background: sub === id ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.08)',
-            padding:'0.1rem 0.4rem', borderRadius:'10px', fontSize:'0.7rem', fontWeight:700,
-          }}>{badge}</span>}
-        </button>
-      );
+      const tabs = [
+        {
+          id: 'findings', icon: '\u26A0\uFE0F', label: 'Findings',
+          value: openFindings, valueLabel: 'open',
+          sub: `${fixedFindings} fixed, ${latestFindings.length} total`,
+          color: '#EA9320', alertColor: openFindings > 0 ? '#f87171' : '#4ade80',
+        },
+        {
+          id: 'geo', icon: '\uD83D\uDCCD', label: 'GEO Signals',
+          value: geoPct != null ? geoPct + '%' : '--',  valueLabel: 'pass rate',
+          sub: `${geoPass}/${latestGeo.length} signals passing`,
+          color: '#f97316', alertColor: geoPct >= 70 ? '#4ade80' : geoPct >= 40 ? '#fbbf24' : '#f87171',
+        },
+        {
+          id: 'ai', icon: '\uD83E\uDD16', label: 'AI Mentions',
+          value: aiPct != null ? aiPct + '%' : '--', valueLabel: 'found',
+          sub: `${aiMentioned}/${aiMentions.length} probes mentioned`,
+          color: '#a78bfa', alertColor: aiPct >= 60 ? '#4ade80' : aiPct >= 30 ? '#fbbf24' : '#f87171',
+        },
+      ];
 
       return (
         <div>
-          <div style={{display:'flex', gap:'0.5rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
-            {pill('findings', 'Findings', openFindings > 0 ? openFindings : null, '#EA9320')}
-            {pill('geo', 'GEO Signals', geoPct != null ? geoPct + '%' : null, '#f97316')}
-            {pill('ai', 'AI Mentions', aiPct != null ? aiPct + '%' : null, '#a78bfa')}
+          {/* Card-style sub-tabs */}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'0.75rem', marginBottom:'2rem'}}>
+            {tabs.map(t => {
+              const active = sub === t.id;
+              return (
+                <button key={t.id} onClick={() => setSub(t.id)} style={{
+                  background: active ? `${t.color}11` : '#0a0a0a',
+                  border: active ? `2px solid ${t.color}` : '1px solid #222',
+                  borderRadius:'10px', padding:'1rem', cursor:'pointer', textAlign:'left',
+                  transition:'all 0.15s', position:'relative', overflow:'hidden',
+                }}>
+                  {/* Active indicator bar */}
+                  {active && <div style={{position:'absolute', top:0, left:0, right:0, height:'3px', background:t.color}} />}
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.5rem'}}>
+                    <span style={{fontSize:'1.3rem'}}>{t.icon}</span>
+                    <span style={{
+                      fontSize:'1.4rem', fontWeight:700, color: t.alertColor,
+                      fontFamily:'Roboto Slab, serif', lineHeight:1,
+                    }}>{t.value}</span>
+                  </div>
+                  <div style={{fontWeight:700, fontSize:'0.9rem', color: active ? '#fafafa' : '#ccc', marginBottom:'0.2rem'}}>
+                    {t.label}
+                  </div>
+                  <div style={{fontSize:'0.75rem', color: active ? '#aaa' : '#555'}}>
+                    {t.sub}
+                  </div>
+                </button>
+              );
+            })}
           </div>
           {sub === 'findings' && <FindingsTab latestFindings={latestFindings} />}
           {sub === 'geo' && <GeoTab latestGeo={latestGeo} />}
