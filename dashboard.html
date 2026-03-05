@@ -50,6 +50,14 @@
     .pill { display:inline-block; padding:0.15rem 0.6rem; border-radius:10px; font-size:0.75rem; font-weight:600; }
     .progress-bar { background:#333; border-radius:4px; height:8px; overflow:hidden; }
     .progress-fill { height:100%; border-radius:4px; transition:width 0.3s; }
+    .rank-popup .leaflet-popup-content-wrapper { background:#1a1a1a; color:#fafafa; border:1px solid #333; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.6); }
+    .rank-popup .leaflet-popup-tip { background:#1a1a1a; border:1px solid #333; }
+    .rank-popup .leaflet-popup-content { margin:12px 14px; color:#fafafa; }
+    .rank-popup .leaflet-popup-content div { color:#fafafa !important; }
+    .rank-popup .leaflet-popup-content span { color:#aaa; }
+    .rank-popup .leaflet-popup-close-button { color:#888 !important; }
+    .rank-popup .leaflet-popup-close-button:hover { color:#fff !important; }
+    .rank-tooltip { background:#1a1a1a !important; color:#EA9320 !important; border:1px solid #EA9320 !important; font-family:Roboto,sans-serif !important; }
     select.filter { background:#1a1a1a; color:#fafafa; border:1px solid #333; padding:0.4rem 0.8rem; border-radius:4px; }
   </style>
 </head>
@@ -534,58 +542,87 @@
         const cLng = parseFloat(rm.grid_center_lng || (rm.raw_response && rm.raw_response.center_lng) || 0);
         if (!cLat || !cLng) return;
 
-        // Clean up previous map
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.remove();
-          mapInstanceRef.current = null;
-        }
+        if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
 
         const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false, attributionControl: false }).setView([cLat, cLng], 11);
         mapInstanceRef.current = map;
 
-        // Dark tile layer
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          maxZoom: 19,
-        }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
-        // Rank color helper
         const getRankStyle = (rank) => {
-          if (!rank || rank > 20) return { bg: 'rgba(100,100,100,0.5)', border: '#555', color: '#888' };
-          if (rank <= 3) return { bg: 'rgba(74,222,128,0.7)', border: '#4ade80', color: '#fff' };
-          if (rank <= 7) return { bg: 'rgba(163,230,53,0.6)', border: '#a3e635', color: '#fff' };
-          if (rank <= 10) return { bg: 'rgba(251,191,36,0.6)', border: '#fbbf24', color: '#fff' };
-          if (rank <= 15) return { bg: 'rgba(249,115,22,0.6)', border: '#f97316', color: '#fff' };
-          return { bg: 'rgba(248,113,113,0.6)', border: '#f87171', color: '#fff' };
+          if (!rank || rank > 20) return { bg: 'rgba(80,80,80,0.7)', border: '#555', color: '#999' };
+          if (rank <= 3) return { bg: 'rgba(34,197,94,0.85)', border: '#22c55e', color: '#fff' };
+          if (rank <= 7) return { bg: 'rgba(132,204,22,0.8)', border: '#84cc16', color: '#fff' };
+          if (rank <= 10) return { bg: 'rgba(234,179,8,0.8)', border: '#eab308', color: '#fff' };
+          if (rank <= 15) return { bg: 'rgba(249,115,22,0.8)', border: '#f97316', color: '#fff' };
+          return { bg: 'rgba(239,68,68,0.8)', border: '#ef4444', color: '#fff' };
         };
 
-        // Add grid point markers
+        // Extract business first word for highlighting in popups
+        const bizFirstWord = (rm.raw_response?.grid_coords || []).reduce((found, c) => {
+          if (found) return found;
+          const tr = c?.top_results || [];
+          for (const r of tr) { if (r.rank === 1 && r.title) return r.title.split(' ')[0].toLowerCase(); }
+          return null;
+        }, null) || '';
+
+        const buildPopup = (coord, rank, idx) => {
+          const topResults = coord && coord.top_results;
+          const isCenter = idx === Math.floor(grid.length / 2);
+          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;">`;
+          html += `<div style="font-weight:700;margin-bottom:6px;font-size:13px;color:#fafafa;">`;
+          html += isCenter ? '&#9733; Center Point' : `Grid [${Math.floor(idx/size)},${idx%size}]`;
+          html += `</div>`;
+          if (rank) {
+            html += `<div style="font-size:12px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rank<=3?'#4ade80':rank<=10?'#eab308':'#f87171'};font-size:15px;">#${rank}</b></div>`;
+          } else {
+            html += `<div style="font-size:12px;color:#666;margin-bottom:8px;">Not ranked in top results</div>`;
+          }
+          if (topResults && topResults.length > 0) {
+            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top Results</div>`;
+            topResults.forEach(r => {
+              const isUs = bizFirstWord && r.title && r.title.toLowerCase().includes(bizFirstWord);
+              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px;padding:2px 4px;${isUs ? 'background:rgba(234,147,32,0.15);border-radius:4px;' : ''}">`;
+              html += `<span style="font-weight:700;color:#888;min-width:22px;text-align:right;">#${r.rank}</span>`;
+              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '600' : '400'};">${r.title || 'Unknown'}</span>`;
+              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#666;font-size:10px;">('+r.reviews+')</span>' : ''}</span>`;
+              html += `</div>`;
+            });
+          } else {
+            html += `<div style="font-size:11px;color:#555;">No details stored. Re-run scan to capture.</div>`;
+          }
+          html += `</div>`;
+          return html;
+        };
+
+        const addMarker = (lat, lng, rank, idx, coord) => {
+          const style = getRankStyle(rank);
+          const isCenter = idx === Math.floor(grid.length / 2);
+          const sz = isCenter ? 40 : 32;
+          const label = rank && rank <= 20 ? rank : (rank ? '20+' : '\u2014');
+
+          const icon = L.divIcon({
+            className: '',
+            html: `<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;background:${style.bg};color:${style.color};border:${isCenter ? '3px solid #EA9320' : '2px solid ' + style.border};border-radius:6px;font-size:${isCenter ? '16px' : '13px'};font-weight:700;font-family:Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:pointer;transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.2)';this.style.zIndex=999;" onmouseout="this.style.transform='scale(1)';this.style.zIndex='';">${label}</div>`,
+            iconSize: [sz, sz],
+            iconAnchor: [sz / 2, sz / 2],
+          });
+
+          const marker = L.marker([lat, lng], { icon }).addTo(map);
+          marker.bindPopup(buildPopup(coord, rank, idx), { className: 'rank-popup', maxWidth: 280 });
+        };
+
         if (coords && coords.length === grid.length) {
           coords.forEach((coord, i) => {
             if (!coord || !coord.lat || !coord.lng) return;
-            const rank = grid[i];
-            const style = getRankStyle(rank);
-            const isCenter = i === Math.floor(grid.length / 2);
-            const sz = isCenter ? 36 : 30;
-            const label = rank && rank <= 20 ? rank : (rank ? '20+' : '\u2014');
-
-            const icon = L.divIcon({
-              className: '',
-              html: `<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;background:${style.bg};color:${style.color};border:${isCenter ? '3px solid #EA9320' : '2px solid ' + style.border};border-radius:6px;font-size:${isCenter ? '14px' : '12px'};font-weight:700;font-family:Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.5);backdrop-filter:blur(4px);">${label}</div>`,
-              iconSize: [sz, sz],
-              iconAnchor: [sz / 2, sz / 2],
-            });
-
-            L.marker([coord.lat, coord.lng], { icon }).addTo(map);
+            addMarker(coord.lat, coord.lng, grid[i], i, coord);
           });
-
-          // Fit bounds to grid
           const lats = coords.filter(c => c && c.lat).map(c => c.lat);
           const lngs = coords.filter(c => c && c.lng).map(c => c.lng);
           if (lats.length > 0) {
             map.fitBounds([[Math.min(...lats) - 0.01, Math.min(...lngs) - 0.01], [Math.max(...lats) + 0.01, Math.max(...lngs) + 0.01]]);
           }
         } else {
-          // No coords, just show center with basic markers in grid pattern
           const radiusMi = rm.grid_radius_mi || (rm.raw_response && rm.raw_response.radius_mi) || 5;
           const latSpan = radiusMi * 2 / 69.0;
           const lngSpan = radiusMi * 2 / (69.0 * Math.cos(cLat * Math.PI / 180));
@@ -593,53 +630,28 @@
           const lngStep = lngSpan / (size - 1);
           const startLat = cLat + latSpan / 2;
           const startLng = cLng - lngSpan / 2;
-
           for (let row = 0; row < size; row++) {
             for (let col = 0; col < size; col++) {
               const idx = row * size + col;
-              const lat = startLat - row * latStep;
-              const lng = startLng + col * lngStep;
-              const rank = grid[idx];
-              const style = getRankStyle(rank);
-              const isCenter = row === Math.floor(size / 2) && col === Math.floor(size / 2);
-              const sz = isCenter ? 36 : 30;
-              const label = rank && rank <= 20 ? rank : (rank ? '20+' : '\u2014');
-
-              const icon = L.divIcon({
-                className: '',
-                html: `<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;background:${style.bg};color:${style.color};border:${isCenter ? '3px solid #EA9320' : '2px solid ' + style.border};border-radius:6px;font-size:${isCenter ? '14px' : '12px'};font-weight:700;font-family:Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.5);">${label}</div>`,
-                iconSize: [sz, sz],
-                iconAnchor: [sz / 2, sz / 2],
-              });
-
-              L.marker([lat, lng], { icon }).addTo(map);
+              addMarker(startLat - row * latStep, startLng + col * lngStep, grid[idx], idx, null);
             }
           }
         }
 
-        // Business center star marker
         const starIcon = L.divIcon({
           className: '',
-          html: '<div style="width:16px;height:16px;background:#EA9320;border:2px solid #fff;border-radius:50%;box-shadow:0 0 8px #EA9320;"></div>',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
+          html: '<div style="width:14px;height:14px;background:#EA9320;border:2px solid #fff;border-radius:50%;box-shadow:0 0 10px rgba(234,147,32,0.8);"></div>',
+          iconSize: [14, 14], iconAnchor: [7, 7],
         });
-        L.marker([cLat, cLng], { icon: starIcon, zIndexOffset: 1000 }).addTo(map).bindTooltip('Business Location', {direction:'top'});
+        L.marker([cLat, cLng], { icon: starIcon, zIndexOffset: 1000 }).addTo(map).bindTooltip('Business Location', {direction:'top',className:'rank-tooltip'});
 
-        // Force resize after render
         setTimeout(() => map.invalidateSize(), 100);
-
-        return () => {
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.remove();
-            mapInstanceRef.current = null;
-          }
-        };
+        return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
       }, [rm, grid, size]);
 
       return React.createElement('div', {
         ref: mapRef,
-        style: { width: '100%', height: '450px', borderRadius: '8px', margin: '1rem 0', border: '1px solid #333' }
+        style: { width: '100%', height: '500px', borderRadius: '8px', margin: '1rem 0', border: '1px solid #333' }
       });
     }
 
