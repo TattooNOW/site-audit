@@ -689,7 +689,7 @@
 
         if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
 
-        const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false, attributionControl: false }).setView([cLat, cLng], 11);
+        const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false, attributionControl: false }).setView([cLat, cLng], 12);
         mapInstanceRef.current = map;
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
@@ -1580,6 +1580,44 @@
               </div>
             </section>
           )}
+        </div>
+      );
+    }
+
+    /* ── Tab: Insights (combined Findings + GEO + AI) ────── */
+    function InsightsTab({ latestFindings, latestGeo, aiMentions, businessName }) {
+      const [sub, setSub] = React.useState('findings');
+
+      const openFindings = latestFindings.filter(f => f.status === 'open').length;
+      const geoPct = latestGeo.length > 0 ? Math.round(latestGeo.filter(g => g.signal_value).length / latestGeo.length * 100) : null;
+      const aiPct = aiMentions.length > 0 ? Math.round(aiMentions.filter(m => m.mentioned).length / aiMentions.length * 100) : null;
+
+      const pill = (id, label, badge, color) => (
+        <button key={id} onClick={() => setSub(id)} style={{
+          padding:'0.4rem 0.9rem', borderRadius:'20px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
+          background: sub === id ? (color || '#EA9320') : 'transparent',
+          color: sub === id ? '#000' : '#aaa',
+          border: '1px solid ' + (sub === id ? (color || '#EA9320') : '#333'),
+          cursor:'pointer', fontWeight: sub === id ? 700 : 400, display:'flex', alignItems:'center', gap:'0.4rem',
+        }}>
+          {label}
+          {badge != null && <span style={{
+            background: sub === id ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.08)',
+            padding:'0.1rem 0.4rem', borderRadius:'10px', fontSize:'0.7rem', fontWeight:700,
+          }}>{badge}</span>}
+        </button>
+      );
+
+      return (
+        <div>
+          <div style={{display:'flex', gap:'0.5rem', marginBottom:'1.5rem', flexWrap:'wrap'}}>
+            {pill('findings', 'Findings', openFindings > 0 ? openFindings : null, '#EA9320')}
+            {pill('geo', 'GEO Signals', geoPct != null ? geoPct + '%' : null, '#f97316')}
+            {pill('ai', 'AI Mentions', aiPct != null ? aiPct + '%' : null, '#a78bfa')}
+          </div>
+          {sub === 'findings' && <FindingsTab latestFindings={latestFindings} />}
+          {sub === 'geo' && <GeoTab latestGeo={latestGeo} />}
+          {sub === 'ai' && <AITab aiMentions={aiMentions} businessName={businessName} />}
         </div>
       );
     }
@@ -2494,9 +2532,7 @@
         { id:'homepage', label:'Homepage', badge: hpMissing > 0 ? hpMissing : null },
         { id:'rankmap', label:'Rank Map', badge: latestRankMap ? latestRankMap.top_3_pct+'%' : null },
         { id:'core30', label:'Core 30', badge: missingPages > 0 ? missingPages : null },
-        { id:'findings', label:'Findings', badge: openFindings || null },
-        { id:'geo', label:'GEO', badge: latestGeo.length > 0 ? Math.round(latestGeo.filter(g=>g.signal_value).length/latestGeo.length*100)+'%' : null },
-        { id:'ai', label:'AI', badge: aiMentions.length > 0 ? Math.round(aiMentions.filter(m=>m.mentioned).length/aiMentions.length*100)+'%' : null },
+        { id:'insights', label:'Insights', badge: openFindings || null },
         { id:'links', label:'Link Checklist', badge: pendingLinks || null },
         { id:'directories', label:'Directories', badge: dirNeedsAtt || null },
         { id:'competitors', label:'Competitors' },
@@ -2532,9 +2568,7 @@
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
-          {activeTab === 'findings' && <FindingsTab latestFindings={latestFindings} />}
-          {activeTab === 'geo' && <GeoTab latestGeo={latestGeo} />}
-          {activeTab === 'ai' && <AITab aiMentions={aiMentions} businessName={site.business_name} />}
+          {activeTab === 'insights' && <InsightsTab latestFindings={latestFindings} latestGeo={latestGeo} aiMentions={aiMentions} businessName={site.business_name} />}
           {activeTab === 'links' && <LinkChecklistTab links={linkChecklist} />}
           {activeTab === 'directories' && <DirectoryTab listings={directoryListings} site={site} />}
           {activeTab === 'competitors' && <CompetitorsTab competitors={competitors} site={site} aiMentions={aiMentions} />}
