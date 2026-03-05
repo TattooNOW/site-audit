@@ -549,11 +549,13 @@
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
-        // Colors: green = 1-3, orange = 4+, red = not ranked
-        const getRankStyle = (rank) => {
+        // Colors: green = 1-3, orange = 4-10, red = 11+, gray = no results
+        const getRankStyle = (rank, resultCount) => {
+          if (resultCount === 0) return { bg: '#444', border: '#333', color: '#888' }; // N/A - no results
           if (!rank) return { bg: '#dc2626', border: '#b91c1c', color: '#fff' };
           if (rank <= 3) return { bg: '#16a34a', border: '#15803d', color: '#fff' };
-          return { bg: '#c2710c', border: '#a16207', color: '#fff' };
+          if (rank <= 10) return { bg: '#c2710c', border: '#a16207', color: '#fff' };
+          return { bg: '#dc2626', border: '#b91c1c', color: '#fff' };
         };
 
         // Get business name for highlighting
@@ -596,6 +598,8 @@
           if (rank) {
             const rc = rank <= 3 ? '#4ade80' : rank <= 10 ? '#f59e0b' : '#f87171';
             html += `<div style="font-size:13px;color:#aaa;margin-bottom:10px;">Your rank: <b style="color:${rc};font-size:18px;">#${rank}</b></div>`;
+          } else if (topResults.length === 0) {
+            html += `<div style="font-size:13px;color:#888;margin-bottom:10px;font-style:italic;">No local results for this area</div>`;
           } else {
             html += `<div style="font-size:13px;color:#f87171;margin-bottom:10px;font-weight:600;">Not in top 20</div>`;
           }
@@ -659,11 +663,12 @@
         });
 
         const addMarker = (lat, lng, rank, idx, coord) => {
-          const style = getRankStyle(rank);
+          const resultCount = coord ? (coord.result_count != null ? coord.result_count : (coord.top_results || []).length) : -1;
+          const style = getRankStyle(rank, resultCount);
           const isCenter = idx === Math.floor(grid.length / 2);
           const sz = isCenter ? 44 : 36;
-          const label = rank ? rank : '20+';
-          const fontSize = !rank ? '10px' : (isCenter ? '16px' : '14px');
+          const label = resultCount === 0 ? 'N/A' : (rank ? rank : '20+');
+          const fontSize = (!rank || resultCount === 0) ? '10px' : (isCenter ? '16px' : '14px');
 
           const icon = L.divIcon({
             className: '',
