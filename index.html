@@ -58,6 +58,9 @@
     .rank-popup .leaflet-popup-close-button { color:#888 !important; }
     .rank-popup .leaflet-popup-close-button:hover { color:#fff !important; }
     .rank-tooltip { background:#1a1a1a !important; color:#EA9320 !important; border:1px solid #EA9320 !important; font-family:Roboto,sans-serif !important; }
+    .rank-tooltip-card { background:#fff !important; color:#222 !important; border:1px solid #ddd !important; border-radius:8px !important; box-shadow:0 4px 16px rgba(0,0,0,0.25) !important; padding:6px 8px !important; font-family:Roboto,sans-serif !important; }
+    .rank-tooltip-card .leaflet-tooltip-content { color:#222 !important; }
+    .rank-tooltip-card::before { border-top-color:#fff !important; }
     select.filter { background:#1a1a1a; color:#fafafa; border:1px solid #333; padding:0.4rem 0.8rem; border-radius:4px; }
   </style>
 </head>
@@ -729,71 +732,47 @@
           } catch { return ''; }
         };
 
-        const popupUid = () => 'p' + Math.random().toString(36).slice(2, 8);
-
-        // Store coord data globally so the modal can access it
-        window.__rankMapCoords = window.__rankMapCoords || {};
-
-        const buildPopup = (coord, rank, idx) => {
+        // Build hover tooltip HTML (top 3 + client rank)
+        const buildTooltip = (coord, rank, idx) => {
           const topResults = coord && coord.top_results ? coord.top_results : [];
           const isCenter = idx === Math.floor(grid.length / 2);
-          const pid = 'rmp_' + idx;
 
-          // Store data for modal access
-          window.__rankMapCoords[pid] = { coord, rank, idx, topResults, bizWord };
+          let html = `<div style="font-family:Roboto,sans-serif;min-width:200px;max-width:260px;">`;
 
-          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;max-width:280px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
-          // Town name header
-          html += `<div class="popup-town" style="font-weight:700;margin-bottom:4px;font-size:13px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
-
-          // Client rank
-          if (rank) {
-            const rc = rank <= 3 ? '#4ade80' : rank <= 10 ? '#f59e0b' : '#f87171';
-            html += `<div style="font-size:13px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rc};font-size:18px;">#${rank}</b></div>`;
-          } else if (topResults.length === 0) {
-            html += `<div style="font-size:12px;color:#888;margin-bottom:8px;font-style:italic;">No local results for this area</div>`;
-          } else {
-            html += `<div style="font-size:12px;color:#f87171;margin-bottom:8px;font-weight:600;">Not in top 20</div>`;
-          }
-
-          // Top 3 compact list
-          if (topResults.length > 0) {
-            const top3 = topResults.filter(r => r.rank <= 3);
+          // Top 3 rows (like BrightLocal's white card)
+          const top3 = topResults.filter(r => r.rank <= 3);
+          if (top3.length > 0) {
             top3.forEach(r => {
               const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
               const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
-              html += `<div style="display:flex;gap:5px;align-items:center;margin-bottom:2px;font-size:11px;padding:3px 4px;border-radius:3px;${isUs ? 'background:rgba(234,147,32,0.2);' : ''}">`;
-              html += `<span style="font-weight:700;color:${rColor};min-width:18px;text-align:right;">#${r.rank}</span>`;
-              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ccc'};font-weight:${isUs ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
+              html += `<div style="display:flex;gap:6px;align-items:center;padding:4px 2px;font-size:12px;">`;
+              html += `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${rColor};color:#fff;font-weight:700;font-size:10px;flex-shrink:0;">${r.rank}</span>`;
+              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#222'};font-weight:${isUs ? '700' : '500'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
               html += `</div>`;
             });
-
-            // "View all results" button → opens React modal
-            html += `<div onclick="window.__openRankDetail && window.__openRankDetail('${pid}')" style="font-size:11px;color:#EA9320;cursor:pointer;margin-top:6px;padding:5px 0;text-align:center;border-top:1px solid #333;font-weight:600;">View all ${topResults.length} results &rarr;</div>`;
           }
+
+          // Show client rank if 4-20
+          if (rank && rank > 3) {
+            const isUs = true;
+            const rColor = rank <= 10 ? '#f59e0b' : '#f87171';
+            const clientResult = topResults.find(r => {
+              return bizWord && r.title && r.title.toLowerCase().includes(bizWord);
+            });
+            const title = clientResult ? clientResult.title : 'Your Business';
+            html += `<div style="display:flex;gap:6px;align-items:center;padding:4px 2px;font-size:12px;margin-top:2px;border-top:1px solid #eee;">`;
+            html += `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${rColor};color:#fff;font-weight:700;font-size:10px;flex-shrink:0;">${rank}</span>`;
+            html += `<span style="flex:1;color:#EA9320;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>`;
+            html += `</div>`;
+          }
+
+          if (topResults.length === 0) {
+            html += `<div style="font-size:11px;color:#999;padding:4px 2px;font-style:italic;">No results for this area</div>`;
+          }
+
           html += `</div>`;
           return html;
         };
-
-        // Wire up global callback for "View all results" in popup
-        window.__openRankDetail = (pid) => {
-          const data = window.__rankMapCoords[pid];
-          if (data && onSelectPoint) onSelectPoint(data);
-        };
-
-        // Populate town names in popups on open
-        map.on('popupopen', async (e) => {
-          const inner = e.popup.getElement()?.querySelector('.popup-town');
-          const container = e.popup.getElement()?.querySelector('.rank-popup-inner');
-          if (inner && container && inner.textContent === 'Loading...') {
-            const lat = parseFloat(container.dataset.lat);
-            const lng = parseFloat(container.dataset.lng);
-            if (lat && lng) {
-              const town = await getTown(lat, lng);
-              inner.textContent = town || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
-            }
-          }
-        });
 
         const addMarker = (lat, lng, rank, idx, coord) => {
           const resultCount = coord ? (coord.result_count != null ? coord.result_count : (coord.top_results || []).length) : -1;
@@ -811,7 +790,22 @@
           });
 
           const marker = L.marker([lat, lng], { icon }).addTo(map);
-          marker.bindPopup(buildPopup(coord, rank, idx), { className: 'rank-popup', maxWidth: 280 });
+
+          // Hover → tooltip with top 3
+          const topResults = coord && coord.top_results ? coord.top_results : [];
+          if (topResults.length > 0 || rank) {
+            marker.bindTooltip(buildTooltip(coord, rank, idx), {
+              direction: 'top', offset: [0, -sz/2 - 4], className: 'rank-tooltip-card',
+              opacity: 1, sticky: false,
+            });
+          }
+
+          // Click → open full detail modal
+          marker.on('click', () => {
+            if (onSelectPoint) {
+              onSelectPoint({ coord, rank, idx, topResults, bizWord });
+            }
+          });
         };
 
         if (coords && coords.length === grid.length) {
