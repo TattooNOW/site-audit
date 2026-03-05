@@ -871,11 +871,20 @@
 
     function RankMapTab({ rankMaps }) {
       if (!rankMaps || rankMaps.length === 0) {
-        return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No rank map data imported</h3><p style={{color:'#666'}}>Run import-rankmap.js with a Local Falcon or DataForSEO CSV.</p></div>;
+        return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No rank map data imported</h3><p style={{color:'#666'}}>Run a rank map scan to populate.</p></div>;
       }
 
-      const [selectedIdx, setSelectedIdx] = React.useState(0);
-      const rm = rankMaps[selectedIdx];
+      // Group scans by keyword, latest first within each
+      const keywords = [...new Set(rankMaps.map(r => r.keyword))];
+      const [activeKeyword, setActiveKeyword] = React.useState(keywords[0]);
+      const kwScans = rankMaps.filter(r => r.keyword === activeKeyword);
+      const [scanIdx, setScanIdx] = React.useState(0);
+      const rm = kwScans[scanIdx] || kwScans[0];
+      if (!rm) return null;
+
+      // Reset scan index when keyword changes
+      React.useEffect(() => { setScanIdx(0); }, [activeKeyword]);
+
       const grid = rm.grid_data || [];
       const sizeRaw = rm.grid_size || '';
       const size = typeof sizeRaw === 'number' ? sizeRaw : (parseInt(sizeRaw) || Math.round(Math.sqrt(grid.length)) || 5);
@@ -884,12 +893,32 @@
 
       return (
         <div>
-          {/* Selector for multiple scans */}
-          {rankMaps.length > 1 && (
-            <div style={{marginBottom:'1.5rem'}}>
-              <select className="filter" value={selectedIdx} onChange={e => setSelectedIdx(Number(e.target.value))}>
-                {rankMaps.map((r,i) => (
-                  <option key={r.id} value={i}>{r.keyword} — {r.scan_date} ({r.source})</option>
+          {/* Keyword pill tabs */}
+          <div style={{display:'flex', gap:'0.5rem', marginBottom:'1.25rem', flexWrap:'wrap', alignItems:'center'}}>
+            <span style={{color:'#666', fontSize:'0.75rem', textTransform:'uppercase', letterSpacing:'0.5px', marginRight:'0.25rem'}}>Keyword:</span>
+            {keywords.map(kw => {
+              const latest = rankMaps.find(r => r.keyword === kw);
+              return (
+                <button key={kw} onClick={() => setActiveKeyword(kw)} style={{
+                  padding:'0.35rem 0.85rem', borderRadius:'20px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
+                  background: activeKeyword === kw ? '#EA9320' : 'transparent',
+                  color: activeKeyword === kw ? '#000' : '#aaa',
+                  border: '1px solid ' + (activeKeyword === kw ? '#EA9320' : '#333'),
+                  cursor:'pointer', fontWeight: activeKeyword === kw ? 700 : 400,
+                  transition:'all 0.15s',
+                }}>
+                  "{kw}" {latest && <span style={{opacity:0.7, marginLeft:'0.25rem', fontSize:'0.7rem'}}>{latest.top_3_pct}%</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Date selector if multiple scans for this keyword */}
+          {kwScans.length > 1 && (
+            <div style={{marginBottom:'1rem'}}>
+              <select className="filter" value={scanIdx} onChange={e => setScanIdx(Number(e.target.value))}>
+                {kwScans.map((r,i) => (
+                  <option key={r.id} value={i}>{r.scan_date} — {r.grid_size} grid, {r.top_3_pct}% top-3</option>
                 ))}
               </select>
             </div>
@@ -897,9 +926,17 @@
 
           {/* Stats — avg rank counts unranked as 21 */}
           {(() => {
-            const allRanks = grid.map(r => r || 21);
+            const coords = rm.raw_response?.grid_coords || [];
+            // Only count points that had results for avg calculation
+            const rankedGridVals = grid.filter(r => r !== null);
+            const pointsWithResults = coords.filter(c => (c.result_count || (c.top_results || []).length) > 0).length || grid.length;
+            const allRanks = grid.map((r, i) => {
+              const c = coords[i];
+              const hasResults = c ? (c.result_count || (c.top_results || []).length) > 0 : true;
+              return hasResults ? (r || 21) : null;
+            }).filter(r => r !== null);
             const trueAvg = allRanks.length > 0 ? (allRanks.reduce((a,b) => a+b, 0) / allRanks.length).toFixed(1) : null;
-            const rankedCount = grid.filter(r => r !== null).length;
+            const rankedCount = rankedGridVals.length;
             return (
               <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
                 <div className="score-card" style={{borderTop:'3px solid #16a34a'}}>
@@ -909,7 +946,7 @@
                 <div className="score-card" style={{borderTop:'3px solid #a78bfa'}}>
                   <h3>Avg Rank</h3>
                   <div className="value" style={{color: trueAvg <= 3 ? '#16a34a' : trueAvg <= 10 ? '#EA9320' : '#ef4444'}}>{trueAvg || '\u2014'}</div>
-                  <div style={{color:'#666', fontSize:'0.75rem'}}>{rankedCount}/{grid.length} ranked</div>
+                  <div style={{color:'#666', fontSize:'0.75rem'}}>{rankedCount}/{pointsWithResults} ranked</div>
                 </div>
                 <div className="score-card" style={{borderTop:'3px solid #60a5fa'}}>
                   <h3>Center Rank</h3>
@@ -930,17 +967,18 @@
             <RankMapLeaflet rm={rm} grid={grid} size={size} />
             <div style={{display:'flex', gap:'1.5rem', flexWrap:'wrap', fontSize:'0.8rem', color:'#aaa', marginTop:'0.5rem'}}>
               <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#16a34a', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Top 3 (Pack)</span>
-              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#c2710c', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>4-20</span>
-              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#dc2626', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Not Ranked</span>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#c2710c', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>4-10</span>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#dc2626', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>11+ / Not Ranked</span>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#444', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>N/A (no results)</span>
             </div>
           </section>
 
           {/* Trend chart if multiple scans for same keyword */}
-          {rankMaps.filter(r => r.keyword === rm.keyword).length > 1 && (
+          {kwScans.length > 1 && (
             <section style={{marginBottom:'2rem'}}>
               <h3>Top-3% Trend — "{rm.keyword}"</h3>
               <Recharts.ResponsiveContainer width="100%" height={220}>
-                <Recharts.LineChart data={rankMaps.filter(r => r.keyword === rm.keyword).reverse().map(r => ({date:r.scan_date, top3:r.top_3_pct, avgRank:r.avg_rank}))}>
+                <Recharts.LineChart data={[...kwScans].reverse().map(r => ({date:r.scan_date, top3:r.top_3_pct, avgRank:r.avg_rank}))}>
                   <Recharts.CartesianGrid strokeDasharray="3 3" stroke="#333" />
                   <Recharts.XAxis dataKey="date" stroke="#888" />
                   <Recharts.YAxis stroke="#888" />
