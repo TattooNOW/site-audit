@@ -345,8 +345,8 @@
               <>
                 <div className="hero-value" style={{color:'#EA9320'}}>{rankMap.top_3_pct}%</div>
                 <div className="hero-label">Top-3 Pack Visibility</div>
-                <div className="hero-sub">"{rankMap.keyword}" &bull; {rankMap.grid_size}pt grid &bull; {rankMap.scan_date}</div>
-                <div className="hero-sub">Avg rank: {rankMap.avg_rank?.toFixed(1) || '\u2014'} &bull; Grid center rank: {rankMap.center_rank || '\u2014'}</div>
+                <div className="hero-sub">"{rankMap.keyword}" &bull; {rankMap.grid_size} grid &bull; {rankMap.scan_date}</div>
+                <div className="hero-sub">Avg rank: {rankMap.avg_rank?.toFixed(1) || '\u2014'} &bull; Grid center rank: {rankMap.center_rank || (rankMap.raw_response && rankMap.raw_response.center_rank) || '\u2014'}</div>
               </>
             ) : (
               <>
@@ -528,7 +528,10 @@
       const [selectedIdx, setSelectedIdx] = React.useState(0);
       const rm = rankMaps[selectedIdx];
       const grid = rm.grid_data || [];
-      const size = rm.grid_size || Math.round(Math.sqrt(grid.length)) || 5;
+      const sizeRaw = rm.grid_size || '';
+      const size = typeof sizeRaw === 'number' ? sizeRaw : (parseInt(sizeRaw) || Math.round(Math.sqrt(grid.length)) || 5);
+      const centerRank = rm.center_rank || (rm.raw_response && rm.raw_response.center_rank) || null;
+      const radiusMi = rm.grid_radius_mi || (rm.raw_response && rm.raw_response.radius_mi) || null;
 
       return (
         <div>
@@ -555,12 +558,12 @@
             </div>
             <div className="score-card" style={{borderTop:'3px solid #60a5fa'}}>
               <h3>Center Rank</h3>
-              <div className="value">{rm.center_rank || '\u2014'}</div>
+              <div className="value">{centerRank || '\u2014'}</div>
             </div>
             <div className="score-card" style={{borderTop:'3px solid #888'}}>
               <h3>Grid</h3>
               <div className="value" style={{fontSize:'1.8rem'}}>{size}x{size}</div>
-              <div style={{color:'#888', fontSize:'0.8rem'}}>{rm.radius_km ? rm.radius_km+'km radius' : ''}</div>
+              <div style={{color:'#888', fontSize:'0.8rem'}}>{radiusMi ? radiusMi+' mi radius' : ''}</div>
             </div>
           </section>
 
