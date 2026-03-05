@@ -340,6 +340,151 @@
       );
     }
 
+    /* ── Component: Live Run Card (inline in Admin Runs tab) ── */
+    function LiveRunCard({ locationId, onComplete }) {
+      const [elapsed, setElapsed] = React.useState(0);
+      const [liveStep, setLiveStep] = React.useState('starting');
+      const [livePct, setLivePct] = React.useState(5);
+      const [liveMsg, setLiveMsg] = React.useState('Starting audit...');
+      const [done, setDone] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      const startTime = React.useRef(Date.now());
+
+      const steps = [
+        { key: 'starting',     label: 'Starting audit',              icon: '\u{1F680}' },
+        { key: 'site_located', label: 'Site located',                icon: '\u{1F4CD}' },
+        { key: 'crawling',     label: 'Crawling website',            icon: '\u{1F578}' },
+        { key: 'analyzing',    label: 'Analyzing HTML & content',    icon: '\u{1F50D}' },
+        { key: 'scoring',      label: 'Scoring SEO, AI & GEO',      icon: '\u{1F4CA}' },
+        { key: 'writing',      label: 'Writing audit report',        icon: '\u{270D}' },
+        { key: 'complete',     label: 'Audit complete!',             icon: '\u2705' },
+      ];
+
+      // Elapsed timer
+      React.useEffect(() => {
+        if (done) return;
+        const iv = setInterval(() => setElapsed(Math.round((Date.now() - startTime.current) / 1000)), 1000);
+        return () => clearInterval(iv);
+      }, [done]);
+
+      // Subscribe to audit_progress via Supabase Realtime
+      React.useEffect(() => {
+        if (!locationId) return;
+        const channel = db.channel('live-run-' + locationId + '-' + Date.now())
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'audit_progress',
+            filter: 'location_id=eq.' + locationId,
+          }, (payload) => {
+            const row = payload.new;
+            setLiveStep(row.step);
+            setLivePct(row.pct || 0);
+            setLiveMsg(row.message || row.step);
+            if (row.step === 'complete') {
+              setDone(true);
+              if (onComplete) setTimeout(onComplete, 1500);
+            }
+            if (row.step === 'error') {
+              setError(row.message || 'Audit failed');
+              setDone(true);
+            }
+          })
+          .subscribe();
+        return () => { db.removeChannel(channel); };
+      }, [locationId]);
+
+      // Fallback poll: check for new audits every 10s
+      React.useEffect(() => {
+        if (!locationId || done) return;
+        let canceled = false;
+        const poll = async () => {
+          try {
+            const { data: siteData } = await db.from('sites').select('id').eq('ghl_location_id', locationId).maybeSingle();
+            if (!siteData || canceled) return;
+            const { data: prog } = await db.from('audit_progress').select('step,pct,message')
+              .eq('location_id', locationId).order('created_at', { ascending: false }).limit(1);
+            if (canceled) return;
+            if (prog && prog.length > 0) {
+              setLiveStep(prog[0].step);
+              setLivePct(prog[0].pct || 0);
+              setLiveMsg(prog[0].message || prog[0].step);
+              if (prog[0].step === 'complete') {
+                setDone(true);
+                if (onComplete) setTimeout(onComplete, 1500);
+              }
+            }
+          } catch (e) { /* ignore */ }
+        };
+        const iv = setInterval(poll, 10000);
+        // Also poll once after 5s in case realtime is slow
+        const t = setTimeout(poll, 5000);
+        return () => { canceled = true; clearInterval(iv); clearTimeout(t); };
+      }, [locationId, done]);
+
+      const currentStepIdx = steps.findIndex(s => s.key === liveStep);
+      const fmtElapsed = (s) => s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+
+      return (
+        <div style={{
+          background: done && !error ? 'rgba(74,222,128,0.05)' : error ? 'rgba(248,113,113,0.05)' : 'rgba(234,147,32,0.05)',
+          border: '1px solid ' + (done && !error ? '#4ade80' : error ? '#f87171' : '#EA9320'),
+          borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem',
+          animation: done ? 'none' : 'pulse 2s ease-in-out infinite',
+        }}>
+          {/* Header row */}
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
+            <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
+              {!done && <div style={{
+                width:'20px', height:'20px', border:'3px solid #333', borderTop:'3px solid #EA9320',
+                borderRadius:'50%', animation:'spin 1s linear infinite',
+              }} />}
+              {done && !error && <span style={{fontSize:'1.2rem'}}>{'\u2705'}</span>}
+              {error && <span style={{fontSize:'1.2rem'}}>{'\u274C'}</span>}
+              <span style={{fontWeight:700, fontSize:'1rem', color: done && !error ? '#4ade80' : error ? '#f87171' : '#EA9320'}}>
+                {done && !error ? 'Audit Complete!' : error ? 'Audit Failed' : 'Audit Running...'}
+              </span>
+            </div>
+            <span style={{color:'#888', fontSize:'0.8rem', fontFamily:'monospace'}}>{fmtElapsed(elapsed)}</span>
+          </div>
+
+          {/* Progress bar */}
+          <div style={{height:'6px', background:'#222', borderRadius:'3px', marginBottom:'1rem', overflow:'hidden'}}>
+            <div style={{
+              height:'100%', borderRadius:'3px',
+              width: (done ? 100 : livePct) + '%',
+              background: done && !error ? '#4ade80' : error ? '#f87171' : 'linear-gradient(90deg, #EA9320, #f5c542)',
+              transition: 'width 0.8s ease-out',
+            }} />
+          </div>
+
+          {/* Step list */}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:'0.4rem 1rem'}}>
+            {steps.map((s, i) => {
+              const isDone = i < currentStepIdx || (done && !error);
+              const isActive = i === currentStepIdx && !done;
+              return (
+                <div key={s.key} style={{
+                  display:'flex', alignItems:'center', gap:'0.5rem', fontSize:'0.8rem',
+                  color: isDone ? '#4ade80' : isActive ? '#EA9320' : '#444',
+                  fontWeight: isActive ? 600 : 400,
+                }}>
+                  <span style={{fontSize:'0.75rem'}}>
+                    {isDone ? '\u2713' : isActive ? '\u25CF' : '\u25CB'}
+                  </span>
+                  <span style={{animation: isActive ? 'pulse 1.5s ease-in-out infinite' : 'none'}}>
+                    {s.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {error && <div style={{marginTop:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(248,113,113,0.1)', borderRadius:'4px', fontSize:'0.8rem', color:'#f87171'}}>{error}</div>}
+        </div>
+      );
+    }
+
     /* ── Tab: Overview ───────────────────────────────────── */
     function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, apifyResults }) {
       const seo = scores.seo?.score ?? '\u2014';
@@ -1686,6 +1831,21 @@
       const [saving, setSaving] = React.useState(false);
       const [saved, setSaved] = React.useState(false);
       const [auditStatus, setAuditStatus] = React.useState('idle');
+
+      // Auto-detect if an audit is currently running
+      React.useEffect(() => {
+        if (!locationId) return;
+        (async () => {
+          try {
+            const { data } = await db.from('audit_progress').select('step,pct')
+              .eq('location_id', locationId).order('created_at', { ascending: false }).limit(1);
+            if (data && data.length > 0 && data[0].step !== 'complete' && data[0].step !== 'error') {
+              setAuditStatus('running');
+            }
+          } catch (e) { /* ignore */ }
+        })();
+      }, [locationId]);
+
       const social = site.social_links || {};
       const [form, setForm] = React.useState({
         domain: site.domain || '',
@@ -1865,7 +2025,7 @@
                   <button onClick={auditStatus !== 'running' ? runAudit : undefined}
                     disabled={auditStatus === 'running' || !form.domain}
                     style={{
-                      width:'100%', padding:'0.65rem', marginBottom:'1.5rem',
+                      width:'100%', padding:'0.65rem', marginBottom:'1rem',
                       background: auditStatus === 'running' ? '#333' : '#EA9320',
                       color: auditStatus === 'running' ? '#888' : '#000',
                       border:'none', borderRadius:'6px', fontWeight:700, cursor: auditStatus === 'running' ? 'wait' : 'pointer',
@@ -1873,6 +2033,14 @@
                     }}>
                     {auditStatus === 'running' ? 'Audit Running...' : 'Run New Audit'}
                   </button>
+
+                  {/* Live Run Card — shows while audit is in progress */}
+                  {auditStatus === 'running' && (
+                    <LiveRunCard locationId={locationId} onComplete={() => {
+                      setAuditStatus('idle');
+                      setTimeout(() => window.location.reload(), 1500);
+                    }} />
+                  )}
 
                   <h4 style={{color:'#EA9320', margin:'0 0 1rem', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Audit History ({audits.length} runs)</h4>
                   {[...audits].reverse().map((a, idx) => {
