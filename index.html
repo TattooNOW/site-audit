@@ -676,7 +676,7 @@
 
     /* ── Tab: Rank Map ───────────────────────────────────── */
     /* ── Leaflet Map for Rank Grid ──────────────────────── */
-    function RankMapLeaflet({ rm, grid, size }) {
+    function RankMapLeaflet({ rm, grid, size, onSelectPoint }) {
       const mapRef = React.useRef(null);
       const mapInstanceRef = React.useRef(null);
 
@@ -731,66 +731,54 @@
 
         const popupUid = () => 'p' + Math.random().toString(36).slice(2, 8);
 
+        // Store coord data globally so the modal can access it
+        window.__rankMapCoords = window.__rankMapCoords || {};
+
         const buildPopup = (coord, rank, idx) => {
           const topResults = coord && coord.top_results ? coord.top_results : [];
           const isCenter = idx === Math.floor(grid.length / 2);
-          const uid = popupUid();
+          const pid = 'rmp_' + idx;
 
-          let html = `<div style="font-family:Roboto,sans-serif;min-width:260px;max-width:340px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
+          // Store data for modal access
+          window.__rankMapCoords[pid] = { coord, rank, idx, topResults, bizWord };
+
+          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;max-width:280px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
           // Town name header
-          html += `<div class="popup-town" style="font-weight:700;margin-bottom:2px;font-size:14px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
-          // Client rank - prominent
+          html += `<div class="popup-town" style="font-weight:700;margin-bottom:4px;font-size:13px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
+
+          // Client rank
           if (rank) {
             const rc = rank <= 3 ? '#4ade80' : rank <= 10 ? '#f59e0b' : '#f87171';
-            html += `<div style="font-size:13px;color:#aaa;margin-bottom:10px;">Your rank: <b style="color:${rc};font-size:18px;">#${rank}</b></div>`;
+            html += `<div style="font-size:13px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rc};font-size:18px;">#${rank}</b></div>`;
           } else if (topResults.length === 0) {
-            html += `<div style="font-size:13px;color:#888;margin-bottom:10px;font-style:italic;">No local results for this area</div>`;
+            html += `<div style="font-size:12px;color:#888;margin-bottom:8px;font-style:italic;">No local results for this area</div>`;
           } else {
-            html += `<div style="font-size:13px;color:#f87171;margin-bottom:10px;font-weight:600;">Not in top 20</div>`;
+            html += `<div style="font-size:12px;color:#f87171;margin-bottom:8px;font-weight:600;">Not in top 20</div>`;
           }
 
-          // Top 3 results - always show if available
+          // Top 3 compact list
           if (topResults.length > 0) {
-            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Top Results</div>`;
-            const showTop = topResults.filter(r => r.rank <= 3);
-            // Also show client row if ranked 4-10
-            const clientRow = rank && rank > 3 && rank <= 10 ? topResults.find(r => {
-              const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
-              return isUs || (r.domain && r.domain.toLowerCase().includes('darkside'));
-            }) : null;
-            const rowsToShow = [...showTop];
-            if (clientRow && !rowsToShow.includes(clientRow)) rowsToShow.push(clientRow);
-
-            rowsToShow.forEach(r => {
+            const top3 = topResults.filter(r => r.rank <= 3);
+            top3.forEach(r => {
               const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
               const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
-              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:12px;padding:4px 5px;border-radius:4px;${isUs ? 'background:rgba(234,147,32,0.2);border-left:3px solid #EA9320;' : 'border-left:3px solid transparent;'}">`;
-              html += `<span style="font-weight:700;color:${rColor};min-width:22px;text-align:right;">#${r.rank}</span>`;
-              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
-              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#888">('+r.reviews+')</span>' : ''}</span>`;
+              html += `<div style="display:flex;gap:5px;align-items:center;margin-bottom:2px;font-size:11px;padding:3px 4px;border-radius:3px;${isUs ? 'background:rgba(234,147,32,0.2);' : ''}">`;
+              html += `<span style="font-weight:700;color:${rColor};min-width:18px;text-align:right;">#${r.rank}</span>`;
+              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ccc'};font-weight:${isUs ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
               html += `</div>`;
             });
 
-            // "Show all" expandable section for remaining results
-            if (topResults.length > rowsToShow.length) {
-              html += `<div id="${uid}-toggle" onclick="document.getElementById('${uid}-all').style.display='block';this.style.display='none';" style="font-size:11px;color:#EA9320;cursor:pointer;margin-top:6px;padding:3px 0;text-align:center;border-top:1px solid #222;">Show all ${topResults.length} results &#9660;</div>`;
-              html += `<div id="${uid}-all" style="display:none;margin-top:4px;border-top:1px solid #222;padding-top:6px;">`;
-              topResults.filter(r => !rowsToShow.includes(r)).forEach(r => {
-                const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
-                const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
-                html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:12px;padding:3px 5px;${isUs ? 'background:rgba(234,147,32,0.15);border-radius:4px;' : ''}">`;
-                html += `<span style="font-weight:700;color:${rColor};min-width:22px;text-align:right;">#${r.rank}</span>`;
-                html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ccc'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
-                if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#888">('+r.reviews+')</span>' : ''}</span>`;
-                html += `</div>`;
-              });
-              html += `</div>`;
-            }
-          } else {
-            html += `<div style="font-size:12px;color:#555;font-style:italic;">No results returned for this location</div>`;
+            // "View all results" button → opens React modal
+            html += `<div onclick="window.__openRankDetail && window.__openRankDetail('${pid}')" style="font-size:11px;color:#EA9320;cursor:pointer;margin-top:6px;padding:5px 0;text-align:center;border-top:1px solid #333;font-weight:600;">View all ${topResults.length} results &rarr;</div>`;
           }
           html += `</div>`;
           return html;
+        };
+
+        // Wire up global callback for "View all results" in popup
+        window.__openRankDetail = (pid) => {
+          const data = window.__rankMapCoords[pid];
+          if (data && onSelectPoint) onSelectPoint(data);
         };
 
         // Populate town names in popups on open
@@ -882,6 +870,8 @@
       const rm = kwScans[scanIdx] || kwScans[0];
       if (!rm) return null;
 
+      const [detailPoint, setDetailPoint] = React.useState(null);
+
       // Reset scan index when keyword changes
       React.useEffect(() => { setScanIdx(0); }, [activeKeyword]);
 
@@ -964,7 +954,7 @@
           {/* Grid Map with Leaflet */}
           <section className="card" style={{marginBottom:'2rem'}}>
             <h3 style={{marginTop:0}}>Grid Map — "{rm.keyword}"</h3>
-            <RankMapLeaflet rm={rm} grid={grid} size={size} />
+            <RankMapLeaflet rm={rm} grid={grid} size={size} onSelectPoint={setDetailPoint} />
             <div style={{display:'flex', gap:'1.5rem', flexWrap:'wrap', fontSize:'0.8rem', color:'#aaa', marginTop:'0.5rem'}}>
               <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#16a34a', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Top 3 (Pack)</span>
               <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#c2710c', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>4-10</span>
@@ -989,6 +979,96 @@
               </Recharts.ResponsiveContainer>
             </section>
           )}
+
+          {/* ── Detail Modal — full SERP results for a grid point ── */}
+          {detailPoint && (() => {
+            const dp = detailPoint;
+            const results = dp.topResults || [];
+            const bw = dp.bizWord || '';
+            const lat = dp.coord?.lat;
+            const lng = dp.coord?.lng;
+
+            return (
+              <div onClick={() => setDetailPoint(null)} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, padding:'1rem'}}>
+                <div onClick={e => e.stopPropagation()} style={{background:'#1a1a1a', border:'1px solid #333', borderRadius:'12px', maxWidth:'560px', width:'100%', maxHeight:'85vh', overflow:'hidden', display:'flex', flexDirection:'column'}}>
+                  {/* Header */}
+                  <div style={{padding:'1.25rem 1.5rem', borderBottom:'1px solid #333', display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0}}>
+                    <div>
+                      <div style={{fontWeight:700, fontSize:'1.1rem', color:'#EA9320'}}>
+                        Grid Point Results
+                      </div>
+                      <div style={{fontSize:'0.8rem', color:'#888', marginTop:'0.25rem'}}>
+                        {lat && lng ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : ''} — "{rm.keyword}"
+                      </div>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', gap:'1rem'}}>
+                      {dp.rank ? (() => {
+                        const rc = dp.rank <= 3 ? '#4ade80' : dp.rank <= 10 ? '#f59e0b' : '#f87171';
+                        return <div style={{textAlign:'center'}}>
+                          <div style={{fontSize:'0.65rem', color:'#888', textTransform:'uppercase'}}>Your Rank</div>
+                          <div style={{fontSize:'1.5rem', fontWeight:700, color:rc}}>#{dp.rank}</div>
+                        </div>;
+                      })() : <div style={{fontSize:'0.8rem', color:'#f87171', fontWeight:600}}>Not ranked</div>}
+                      <button onClick={() => setDetailPoint(null)} style={{background:'none', border:'none', color:'#888', fontSize:'1.5rem', cursor:'pointer', lineHeight:1}}>&times;</button>
+                    </div>
+                  </div>
+
+                  {/* Results list */}
+                  <div style={{overflowY:'auto', padding:'0', flex:1}}>
+                    {results.length === 0 ? (
+                      <div style={{padding:'2rem', textAlign:'center', color:'#888'}}>No results returned for this location</div>
+                    ) : (
+                      <table style={{width:'100%', fontSize:'0.85rem'}}>
+                        <thead>
+                          <tr style={{borderBottom:'1px solid #333'}}>
+                            <th style={{padding:'0.6rem 1rem', textAlign:'left', color:'#666', fontSize:'0.7rem', textTransform:'uppercase'}}>Rank</th>
+                            <th style={{padding:'0.6rem 0.5rem', textAlign:'left', color:'#666', fontSize:'0.7rem', textTransform:'uppercase'}}>Business</th>
+                            <th style={{padding:'0.6rem 0.5rem', textAlign:'right', color:'#666', fontSize:'0.7rem', textTransform:'uppercase'}}>Rating</th>
+                            <th style={{padding:'0.6rem 1rem', textAlign:'right', color:'#666', fontSize:'0.7rem', textTransform:'uppercase'}}>Reviews</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {results.map((r, i) => {
+                            const isUs = bw && r.title && r.title.toLowerCase().includes(bw);
+                            const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
+                            return (
+                              <tr key={i} style={{
+                                borderBottom:'1px solid #222',
+                                background: isUs ? 'rgba(234,147,32,0.12)' : (i % 2 === 0 ? '#1a1a1a' : '#161616'),
+                              }}>
+                                <td style={{padding:'0.6rem 1rem'}}>
+                                  <span style={{
+                                    display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                    width:'28px', height:'28px', borderRadius:'50%',
+                                    background: rColor + '22', color: rColor, fontWeight:700, fontSize:'0.85rem',
+                                  }}>
+                                    {r.rank}
+                                  </span>
+                                </td>
+                                <td style={{padding:'0.6rem 0.5rem'}}>
+                                  <div style={{fontWeight: isUs ? 700 : 500, color: isUs ? '#EA9320' : '#e0e0e0'}}>
+                                    {isUs && <span style={{color:'#EA9320', marginRight:'0.35rem'}}>&#9733;</span>}
+                                    {r.title || 'Unknown'}
+                                  </div>
+                                  {r.domain && <div style={{fontSize:'0.75rem', color:'#555', marginTop:'0.1rem'}}>{r.domain}</div>}
+                                </td>
+                                <td style={{padding:'0.6rem 0.5rem', textAlign:'right', whiteSpace:'nowrap'}}>
+                                  {r.rating ? <span style={{color:'#eab308'}}>{'★'.repeat(Math.round(r.rating))} <span style={{color:'#aaa'}}>{r.rating}</span></span> : <span style={{color:'#444'}}>—</span>}
+                                </td>
+                                <td style={{padding:'0.6rem 1rem', textAlign:'right', color:'#aaa'}}>
+                                  {r.reviews || '—'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       );
     }
