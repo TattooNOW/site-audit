@@ -549,62 +549,96 @@
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
+        // Colors: green = 1-3, orange = 4+, red = not ranked
         const getRankStyle = (rank) => {
-          if (!rank) return { bg: 'rgba(239,68,68,0.6)', border: '#b91c1c', color: '#fca5a5' };
-          if (rank <= 3) return { bg: 'rgba(34,197,94,0.85)', border: '#22c55e', color: '#fff' };
-          if (rank <= 7) return { bg: 'rgba(132,204,22,0.8)', border: '#84cc16', color: '#fff' };
-          if (rank <= 10) return { bg: 'rgba(234,179,8,0.8)', border: '#eab308', color: '#fff' };
-          if (rank <= 15) return { bg: 'rgba(249,115,22,0.8)', border: '#f97316', color: '#fff' };
-          if (rank <= 20) return { bg: 'rgba(239,68,68,0.8)', border: '#ef4444', color: '#fff' };
-          return { bg: 'rgba(239,68,68,0.6)', border: '#b91c1c', color: '#fca5a5' };
+          if (!rank) return { bg: '#dc2626', border: '#b91c1c', color: '#fff' };
+          if (rank <= 3) return { bg: '#16a34a', border: '#15803d', color: '#fff' };
+          return { bg: '#c2710c', border: '#a16207', color: '#fff' };
         };
 
-        // Extract business first word for highlighting in popups
-        const bizFirstWord = (rm.raw_response?.grid_coords || []).reduce((found, c) => {
+        // Get business name for highlighting
+        const bizName = (rm.raw_response?.grid_coords || []).reduce((found, c) => {
           if (found) return found;
           const tr = c?.top_results || [];
-          for (const r of tr) { if (r.rank === 1 && r.title) return r.title.split(' ')[0].toLowerCase(); }
+          for (const r of tr) {
+            if (r.domain && r.domain.toLowerCase().includes('darkside')) return r.title;
+            if (r.title && r.title.toLowerCase().includes('darkside')) return r.title;
+          }
           return null;
         }, null) || '';
+        const bizWord = bizName ? bizName.split(' ')[0].toLowerCase() : '';
+
+        // Reverse geocode helper (approximate town from lat/lng using Nominatim)
+        const townCache = {};
+        const getTown = async (lat, lng) => {
+          const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+          if (townCache[key]) return townCache[key];
+          try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10&addressdetails=1`);
+            const data = await resp.json();
+            const town = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || data.address?.hamlet || '';
+            townCache[key] = town;
+            return town;
+          } catch { return ''; }
+        };
 
         const buildPopup = (coord, rank, idx) => {
           const topResults = coord && coord.top_results;
           const isCenter = idx === Math.floor(grid.length / 2);
-          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;">`;
-          html += `<div style="font-weight:700;margin-bottom:6px;font-size:13px;color:#fafafa;">`;
-          html += isCenter ? '&#9733; Center Point' : `Grid [${Math.floor(idx/size)},${idx%size}]`;
-          html += `</div>`;
+          const top3 = topResults ? topResults.filter(r => r.rank <= 3) : [];
+          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
+          // Town name header (populated via JS after open)
+          html += `<div class="popup-town" style="font-weight:700;margin-bottom:4px;font-size:14px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
+          // Client rank
           if (rank) {
-            html += `<div style="font-size:12px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rank<=3?'#4ade80':rank<=10?'#eab308':'#f87171'};font-size:15px;">#${rank}</b></div>`;
+            html += `<div style="font-size:13px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rank<=3?'#4ade80':'#f59e0b'};font-size:16px;">#${rank}</b></div>`;
           } else {
-            html += `<div style="font-size:12px;color:#666;margin-bottom:8px;">Not ranked in top results</div>`;
+            html += `<div style="font-size:13px;color:#f87171;margin-bottom:8px;font-weight:600;">Not in top 20</div>`;
           }
-          if (topResults && topResults.length > 0) {
-            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top Results</div>`;
-            topResults.forEach(r => {
-              const isUs = bizFirstWord && r.title && r.title.toLowerCase().includes(bizFirstWord);
-              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px;padding:2px 4px;${isUs ? 'background:rgba(234,147,32,0.15);border-radius:4px;' : ''}">`;
-              html += `<span style="font-weight:700;color:#888;min-width:22px;text-align:right;">#${r.rank}</span>`;
-              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '600' : '400'};">${r.title || 'Unknown'}</span>`;
-              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#666;font-size:10px;">('+r.reviews+')</span>' : ''}</span>`;
+          // Top 3
+          if (top3.length > 0) {
+            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top 3</div>`;
+            top3.forEach(r => {
+              const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
+              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px;padding:3px 4px;${isUs ? 'background:rgba(234,147,32,0.2);border-radius:4px;border-left:3px solid #EA9320;' : ''}">`;
+              html += `<span style="font-weight:700;color:#16a34a;min-width:22px;text-align:right;">#${r.rank}</span>`;
+              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '700' : '400'};">${r.title || 'Unknown'}</span>`;
+              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}</span>`;
               html += `</div>`;
             });
-          } else {
-            html += `<div style="font-size:11px;color:#555;">No details stored. Re-run scan to capture.</div>`;
+          } else if (topResults && topResults.length > 0) {
+            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top Result</div>`;
+            const r = topResults[0];
+            html += `<div style="font-size:12px;color:#ddd;padding:2px 0;">#${r.rank} ${r.title || 'Unknown'}${r.rating ? ' &#9733;'+r.rating : ''}</div>`;
           }
           html += `</div>`;
           return html;
         };
 
+        // Populate town names in popups on open
+        map.on('popupopen', async (e) => {
+          const inner = e.popup.getElement()?.querySelector('.popup-town');
+          const container = e.popup.getElement()?.querySelector('.rank-popup-inner');
+          if (inner && container && inner.textContent === 'Loading...') {
+            const lat = parseFloat(container.dataset.lat);
+            const lng = parseFloat(container.dataset.lng);
+            if (lat && lng) {
+              const town = await getTown(lat, lng);
+              inner.textContent = town || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+            }
+          }
+        });
+
         const addMarker = (lat, lng, rank, idx, coord) => {
           const style = getRankStyle(rank);
           const isCenter = idx === Math.floor(grid.length / 2);
-          const sz = isCenter ? 40 : 32;
+          const sz = isCenter ? 44 : 36;
           const label = rank ? rank : '20+';
+          const fontSize = !rank ? '10px' : (isCenter ? '16px' : '14px');
 
           const icon = L.divIcon({
             className: '',
-            html: `<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;background:${style.bg};color:${style.color};border:${isCenter ? '3px solid #EA9320' : '2px solid ' + style.border};border-radius:6px;font-size:${isCenter ? '16px' : '13px'};font-weight:700;font-family:Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:pointer;transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.2)';this.style.zIndex=999;" onmouseout="this.style.transform='scale(1)';this.style.zIndex='';">${label}</div>`,
+            html: `<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;background:${style.bg};color:${style.color};border:${isCenter ? '3px solid #fff' : '2px solid ' + style.border};border-radius:50%;font-size:${fontSize};font-weight:700;font-family:Roboto,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,0.6);cursor:pointer;transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.15)';this.style.zIndex=999;" onmouseout="this.style.transform='scale(1)';this.style.zIndex='';">${label}</div>`,
             iconSize: [sz, sz],
             iconAnchor: [sz / 2, sz / 2],
           });
@@ -682,38 +716,43 @@
             </div>
           )}
 
-          {/* Stats */}
-          <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
-            <div className="score-card" style={{borderTop:'3px solid #EA9320'}}>
-              <h3>Top-3 %</h3>
-              <div className="value" style={{color:'#EA9320'}}>{rm.top_3_pct}%</div>
-            </div>
-            <div className="score-card" style={{borderTop:'3px solid #a78bfa'}}>
-              <h3>Avg Rank</h3>
-              <div className="value">{rm.avg_rank?.toFixed(1) || '\u2014'}</div>
-            </div>
-            <div className="score-card" style={{borderTop:'3px solid #60a5fa'}}>
-              <h3>Center Rank</h3>
-              <div className="value">{centerRank || '\u2014'}</div>
-            </div>
-            <div className="score-card" style={{borderTop:'3px solid #888'}}>
-              <h3>Grid</h3>
-              <div className="value" style={{fontSize:'1.8rem'}}>{size}x{size}</div>
-              <div style={{color:'#888', fontSize:'0.8rem'}}>{radiusMi ? radiusMi+' mi radius' : ''}</div>
-            </div>
-          </section>
+          {/* Stats — avg rank counts unranked as 21 */}
+          {(() => {
+            const allRanks = grid.map(r => r || 21);
+            const trueAvg = allRanks.length > 0 ? (allRanks.reduce((a,b) => a+b, 0) / allRanks.length).toFixed(1) : null;
+            const rankedCount = grid.filter(r => r !== null).length;
+            return (
+              <section style={{display:'flex', gap:'1rem', marginBottom:'2rem', flexWrap:'wrap'}}>
+                <div className="score-card" style={{borderTop:'3px solid #16a34a'}}>
+                  <h3>Top-3 %</h3>
+                  <div className="value" style={{color: rm.top_3_pct >= 50 ? '#16a34a' : rm.top_3_pct >= 20 ? '#EA9320' : '#ef4444'}}>{rm.top_3_pct}%</div>
+                </div>
+                <div className="score-card" style={{borderTop:'3px solid #a78bfa'}}>
+                  <h3>Avg Rank</h3>
+                  <div className="value" style={{color: trueAvg <= 3 ? '#16a34a' : trueAvg <= 10 ? '#EA9320' : '#ef4444'}}>{trueAvg || '\u2014'}</div>
+                  <div style={{color:'#666', fontSize:'0.75rem'}}>{rankedCount}/{grid.length} ranked</div>
+                </div>
+                <div className="score-card" style={{borderTop:'3px solid #60a5fa'}}>
+                  <h3>Center Rank</h3>
+                  <div className="value" style={{color: centerRank && centerRank <= 3 ? '#16a34a' : '#EA9320'}}>{centerRank || '20+'}</div>
+                </div>
+                <div className="score-card" style={{borderTop:'3px solid #888'}}>
+                  <h3>Grid</h3>
+                  <div className="value" style={{fontSize:'1.8rem'}}>{size}x{size}</div>
+                  <div style={{color:'#888', fontSize:'0.8rem'}}>{radiusMi ? radiusMi+' mi radius' : ''}</div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* Grid Map with Leaflet */}
           <section className="card" style={{marginBottom:'2rem'}}>
             <h3 style={{marginTop:0}}>Grid Map — "{rm.keyword}"</h3>
             <RankMapLeaflet rm={rm} grid={grid} size={size} />
-            <div style={{display:'flex', gap:'1rem', flexWrap:'wrap', fontSize:'0.75rem', color:'#888', marginTop:'0.5rem'}}>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(74,222,128,0.6)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>1-3</span>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(163,230,53,0.5)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>4-7</span>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(251,191,36,0.5)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>8-10</span>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(249,115,22,0.5)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>11-15</span>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(248,113,113,0.5)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>16-20</span>
-              <span><span style={{display:'inline-block', width:'12px', height:'12px', background:'rgba(100,100,100,0.4)', borderRadius:'2px', marginRight:'4px', verticalAlign:'middle'}}></span>Not ranked</span>
+            <div style={{display:'flex', gap:'1.5rem', flexWrap:'wrap', fontSize:'0.8rem', color:'#aaa', marginTop:'0.5rem'}}>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#16a34a', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Top 3 (Pack)</span>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#c2710c', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>4-20</span>
+              <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#dc2626', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Not Ranked</span>
             </div>
           </section>
 
