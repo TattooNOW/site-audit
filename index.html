@@ -550,12 +550,13 @@
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
         const getRankStyle = (rank) => {
-          if (!rank || rank > 20) return { bg: 'rgba(80,80,80,0.7)', border: '#555', color: '#999' };
+          if (!rank) return { bg: 'rgba(239,68,68,0.6)', border: '#b91c1c', color: '#fca5a5' };
           if (rank <= 3) return { bg: 'rgba(34,197,94,0.85)', border: '#22c55e', color: '#fff' };
           if (rank <= 7) return { bg: 'rgba(132,204,22,0.8)', border: '#84cc16', color: '#fff' };
           if (rank <= 10) return { bg: 'rgba(234,179,8,0.8)', border: '#eab308', color: '#fff' };
           if (rank <= 15) return { bg: 'rgba(249,115,22,0.8)', border: '#f97316', color: '#fff' };
-          return { bg: 'rgba(239,68,68,0.8)', border: '#ef4444', color: '#fff' };
+          if (rank <= 20) return { bg: 'rgba(239,68,68,0.8)', border: '#ef4444', color: '#fff' };
+          return { bg: 'rgba(239,68,68,0.6)', border: '#b91c1c', color: '#fca5a5' };
         };
 
         // Extract business first word for highlighting in popups
@@ -599,7 +600,7 @@
           const style = getRankStyle(rank);
           const isCenter = idx === Math.floor(grid.length / 2);
           const sz = isCenter ? 40 : 32;
-          const label = rank && rank <= 20 ? rank : (rank ? '20+' : '\u2014');
+          const label = rank ? rank : '20+';
 
           const icon = L.divIcon({
             className: '',
