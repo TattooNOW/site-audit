@@ -582,34 +582,63 @@
           } catch { return ''; }
         };
 
+        const popupUid = () => 'p' + Math.random().toString(36).slice(2, 8);
+
         const buildPopup = (coord, rank, idx) => {
-          const topResults = coord && coord.top_results;
+          const topResults = coord && coord.top_results ? coord.top_results : [];
           const isCenter = idx === Math.floor(grid.length / 2);
-          const top3 = topResults ? topResults.filter(r => r.rank <= 3) : [];
-          let html = `<div style="font-family:Roboto,sans-serif;min-width:220px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
-          // Town name header (populated via JS after open)
-          html += `<div class="popup-town" style="font-weight:700;margin-bottom:4px;font-size:14px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
-          // Client rank
+          const uid = popupUid();
+
+          let html = `<div style="font-family:Roboto,sans-serif;min-width:260px;max-width:340px;" class="rank-popup-inner" data-lat="${coord?.lat||''}" data-lng="${coord?.lng||''}">`;
+          // Town name header
+          html += `<div class="popup-town" style="font-weight:700;margin-bottom:2px;font-size:14px;color:#EA9320;">${isCenter ? '&#9733; Business Location' : 'Loading...'}</div>`;
+          // Client rank - prominent
           if (rank) {
-            html += `<div style="font-size:13px;color:#aaa;margin-bottom:8px;">Your rank: <b style="color:${rank<=3?'#4ade80':'#f59e0b'};font-size:16px;">#${rank}</b></div>`;
+            const rc = rank <= 3 ? '#4ade80' : rank <= 10 ? '#f59e0b' : '#f87171';
+            html += `<div style="font-size:13px;color:#aaa;margin-bottom:10px;">Your rank: <b style="color:${rc};font-size:18px;">#${rank}</b></div>`;
           } else {
-            html += `<div style="font-size:13px;color:#f87171;margin-bottom:8px;font-weight:600;">Not in top 20</div>`;
+            html += `<div style="font-size:13px;color:#f87171;margin-bottom:10px;font-weight:600;">Not in top 20</div>`;
           }
-          // Top 3
-          if (top3.length > 0) {
-            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top 3</div>`;
-            top3.forEach(r => {
+
+          // Top 3 results - always show if available
+          if (topResults.length > 0) {
+            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Top Results</div>`;
+            const showTop = topResults.filter(r => r.rank <= 3);
+            // Also show client row if ranked 4-10
+            const clientRow = rank && rank > 3 && rank <= 10 ? topResults.find(r => {
               const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
-              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px;padding:3px 4px;${isUs ? 'background:rgba(234,147,32,0.2);border-radius:4px;border-left:3px solid #EA9320;' : ''}">`;
-              html += `<span style="font-weight:700;color:#16a34a;min-width:22px;text-align:right;">#${r.rank}</span>`;
-              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '700' : '400'};">${r.title || 'Unknown'}</span>`;
-              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}</span>`;
+              return isUs || (r.domain && r.domain.toLowerCase().includes('darkside'));
+            }) : null;
+            const rowsToShow = [...showTop];
+            if (clientRow && !rowsToShow.includes(clientRow)) rowsToShow.push(clientRow);
+
+            rowsToShow.forEach(r => {
+              const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
+              const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
+              html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:12px;padding:4px 5px;border-radius:4px;${isUs ? 'background:rgba(234,147,32,0.2);border-left:3px solid #EA9320;' : 'border-left:3px solid transparent;'}">`;
+              html += `<span style="font-weight:700;color:${rColor};min-width:22px;text-align:right;">#${r.rank}</span>`;
+              html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ddd'};font-weight:${isUs ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
+              if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#888">('+r.reviews+')</span>' : ''}</span>`;
               html += `</div>`;
             });
-          } else if (topResults && topResults.length > 0) {
-            html += `<div style="font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;">Top Result</div>`;
-            const r = topResults[0];
-            html += `<div style="font-size:12px;color:#ddd;padding:2px 0;">#${r.rank} ${r.title || 'Unknown'}${r.rating ? ' &#9733;'+r.rating : ''}</div>`;
+
+            // "Show all" expandable section for remaining results
+            if (topResults.length > rowsToShow.length) {
+              html += `<div id="${uid}-toggle" onclick="document.getElementById('${uid}-all').style.display='block';this.style.display='none';" style="font-size:11px;color:#EA9320;cursor:pointer;margin-top:6px;padding:3px 0;text-align:center;border-top:1px solid #222;">Show all ${topResults.length} results &#9660;</div>`;
+              html += `<div id="${uid}-all" style="display:none;margin-top:4px;border-top:1px solid #222;padding-top:6px;">`;
+              topResults.filter(r => !rowsToShow.includes(r)).forEach(r => {
+                const isUs = bizWord && r.title && r.title.toLowerCase().includes(bizWord);
+                const rColor = r.rank <= 3 ? '#16a34a' : r.rank <= 10 ? '#f59e0b' : '#f87171';
+                html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:12px;padding:3px 5px;${isUs ? 'background:rgba(234,147,32,0.15);border-radius:4px;' : ''}">`;
+                html += `<span style="font-weight:700;color:${rColor};min-width:22px;text-align:right;">#${r.rank}</span>`;
+                html += `<span style="flex:1;color:${isUs ? '#EA9320' : '#ccc'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.title || 'Unknown'}</span>`;
+                if (r.rating) html += `<span style="color:#eab308;font-size:11px;white-space:nowrap;">&#9733;${r.rating}${r.reviews ? ' <span style="color:#888">('+r.reviews+')</span>' : ''}</span>`;
+                html += `</div>`;
+              });
+              html += `</div>`;
+            }
+          } else {
+            html += `<div style="font-size:12px;color:#555;font-style:italic;">No results returned for this location</div>`;
           }
           html += `</div>`;
           return html;
