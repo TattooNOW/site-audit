@@ -498,6 +498,124 @@
       );
     }
 
+    /* ── DiagnosticsPanel — system health checks ── */
+    function DiagnosticsPanel({ site }) {
+      const [diagResults, setDiagResults] = React.useState(null);
+      const [diagRunning, setDiagRunning] = React.useState(false);
+
+      const runDiagnostics = async () => {
+        setDiagRunning(true);
+        const checks = [];
+
+        // 1. Supabase connectivity
+        try {
+          const { data, error } = await db.from('sites').select('id,domain,business_name').eq('id', site.id).single();
+          checks.push({ name: 'Supabase Connection', pass: !error && !!data, detail: error ? error.message : `Found: ${data.business_name}` });
+        } catch (e) { checks.push({ name: 'Supabase Connection', pass: false, detail: e.message }); }
+
+        // 2. Rank Map data integrity
+        try {
+          const { data: rmData } = await db.from('rank_maps').select('id,keyword,scan_date,grid_data,top_3_pct,raw_response').eq('site_id', site.id).order('scan_date', { ascending: false }).limit(5);
+          if (!rmData || rmData.length === 0) {
+            checks.push({ name: 'Rank Map Data', pass: false, detail: 'No rank map scans found' });
+          } else {
+            let issues = [];
+            rmData.forEach(rm => {
+              const gd = rm.grid_data || [];
+              const coords = rm.raw_response?.grid_coords || [];
+              if (gd.length !== coords.length) issues.push(`${rm.keyword}: grid_data(${gd.length}) != coords(${coords.length})`);
+              if (coords.some(c => c === null)) issues.push(`${rm.keyword}: null entries in grid_coords`);
+              if (gd.length === 0) issues.push(`${rm.keyword}: empty grid_data`);
+            });
+            checks.push({
+              name: 'Rank Map Data',
+              pass: issues.length === 0,
+              detail: issues.length === 0 ? `${rmData.length} scans OK. Latest: ${rmData[0].keyword} (${rmData[0].top_3_pct}% top-3, ${rmData[0].scan_date})` : issues.join('; '),
+            });
+          }
+        } catch (e) { checks.push({ name: 'Rank Map Data', pass: false, detail: e.message }); }
+
+        // 3. Latest audit data
+        try {
+          const { data: audData } = await db.from('audits').select('id,audit_date,scores,homepage_sections').eq('site_id', site.id).order('audit_date', { ascending: false }).limit(1);
+          if (!audData || audData.length === 0) {
+            checks.push({ name: 'Audit Data', pass: false, detail: 'No audits found' });
+          } else {
+            const a = audData[0];
+            const hp = a.homepage_sections;
+            const overall = a.scores?.overall;
+            checks.push({ name: 'Audit Data', pass: !!overall, detail: `Last: ${a.audit_date}, Overall: ${overall || 'N/A'}, Homepage: ${hp ? hp.found + '/' + hp.total + ' sections' : 'N/A'}` });
+          }
+        } catch (e) { checks.push({ name: 'Audit Data', pass: false, detail: e.message }); }
+
+        // 4. Site config completeness
+        const missing = [];
+        if (!site.domain) missing.push('domain');
+        if (!site.phone) missing.push('phone');
+        if (!site.address) missing.push('address');
+        if (!site.primary_keyword) missing.push('primary_keyword');
+        if (!site.latitude || !site.longitude) missing.push('lat/lng');
+        if (!site.gbp_place_id) missing.push('gbp_place_id');
+        checks.push({ name: 'Site Config', pass: missing.length === 0, detail: missing.length === 0 ? 'All required fields present' : `Missing: ${missing.join(', ')}` });
+
+        // 5. n8n webhook reachability
+        try {
+          await fetch('https://tn.reinventingai.com/webhook/run-audit', { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: '{"test":true}' });
+          checks.push({ name: 'n8n Webhook', pass: true, detail: 'Endpoint reachable' });
+        } catch (e) { checks.push({ name: 'n8n Webhook', pass: false, detail: 'Unreachable: ' + e.message }); }
+
+        // 6. Homepage fetch test
+        try {
+          const url = site.domain.startsWith('http') ? site.domain : 'https://' + site.domain;
+          await fetch(url, { mode: 'no-cors' });
+          checks.push({ name: 'Homepage Reachable', pass: true, detail: `${url} responded` });
+        } catch (e) { checks.push({ name: 'Homepage Reachable', pass: false, detail: e.message }); }
+
+        setDiagResults(checks);
+        setDiagRunning(false);
+      };
+
+      return (
+        <div>
+          <h4 style={{color:'#EA9320', margin:'0 0 1rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>System Diagnostics</h4>
+          <button onClick={runDiagnostics} disabled={diagRunning} style={{
+            background: diagRunning ? '#333' : '#EA9320', color: diagRunning ? '#888' : '#000',
+            border:'none', borderRadius:'6px', padding:'0.5rem 1.5rem', fontWeight:700, fontSize:'0.85rem',
+            cursor: diagRunning ? 'wait' : 'pointer', marginBottom:'1.5rem',
+          }}>
+            {diagRunning ? 'Running checks...' : 'Run Diagnostics'}
+          </button>
+
+          {diagResults && (
+            <div>
+              <div style={{marginBottom:'1rem', fontSize:'0.85rem', color:'#888'}}>
+                {diagResults.filter(c => c.pass).length}/{diagResults.length} checks passed
+              </div>
+              {diagResults.map((c, i) => (
+                <div key={i} style={{
+                  background: c.pass ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.08)',
+                  border: '1px solid ' + (c.pass ? '#16a34a33' : '#dc262633'),
+                  borderRadius:'6px', padding:'0.75rem 1rem', marginBottom:'0.5rem',
+                }}>
+                  <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
+                    <span style={{color: c.pass ? '#4ade80' : '#f87171', fontWeight:700, fontSize:'1rem'}}>{c.pass ? '\u2713' : '\u2717'}</span>
+                    <span style={{fontWeight:600, color:'#eee'}}>{c.name}</span>
+                  </div>
+                  <div style={{fontSize:'0.8rem', color:'#999', marginTop:'0.25rem', paddingLeft:'1.5rem'}}>{c.detail}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!diagResults && !diagRunning && (
+            <div style={{color:'#555', fontSize:'0.85rem'}}>
+              Click "Run Diagnostics" to check database connectivity, data integrity, site configuration, and API endpoints.
+            </div>
+          )}
+        </div>
+      );
+    }
+
     /* ── AuditRunCard — unified run button + progress tracker ── */
     function AuditRunCard({ locationId, site, lastAuditDate, onAuditStarted, onAuditComplete, auditRunning }) {
       const [status, setStatus] = React.useState(auditRunning ? 'running' : 'idle');
@@ -2842,122 +2960,7 @@
               )}
 
               {/* ── DIAGNOSTICS TAB ──────────────────────── */}
-              {adminTab === 'diagnostics' && (() => {
-                const [diagResults, setDiagResults] = React.useState(null);
-                const [diagRunning, setDiagRunning] = React.useState(false);
-
-                const runDiagnostics = async () => {
-                  setDiagRunning(true);
-                  const checks = [];
-
-                  // 1. Supabase connectivity
-                  try {
-                    const { data, error } = await db.from('sites').select('id,domain,business_name').eq('id', site.id).single();
-                    checks.push({ name: 'Supabase Connection', pass: !error && !!data, detail: error ? error.message : `Found: ${data.business_name}` });
-                  } catch (e) { checks.push({ name: 'Supabase Connection', pass: false, detail: e.message }); }
-
-                  // 2. Rank Map data integrity
-                  try {
-                    const { data: rmData } = await db.from('rank_maps').select('id,keyword,scan_date,grid_data,top_3_pct,raw_response').eq('site_id', site.id).order('scan_date', { ascending: false }).limit(5);
-                    if (!rmData || rmData.length === 0) {
-                      checks.push({ name: 'Rank Map Data', pass: false, detail: 'No rank map scans found' });
-                    } else {
-                      let issues = [];
-                      rmData.forEach(rm => {
-                        const gd = rm.grid_data || [];
-                        const coords = rm.raw_response?.grid_coords || [];
-                        if (gd.length !== coords.length) issues.push(`${rm.keyword}: grid_data(${gd.length}) != coords(${coords.length})`);
-                        if (coords.some(c => c === null)) issues.push(`${rm.keyword}: null entries in grid_coords`);
-                        if (gd.length === 0) issues.push(`${rm.keyword}: empty grid_data`);
-                      });
-                      checks.push({
-                        name: 'Rank Map Data',
-                        pass: issues.length === 0,
-                        detail: issues.length === 0 ? `${rmData.length} scans OK. Latest: ${rmData[0].keyword} (${rmData[0].top_3_pct}% top-3, ${rmData[0].scan_date})` : issues.join('; '),
-                      });
-                    }
-                  } catch (e) { checks.push({ name: 'Rank Map Data', pass: false, detail: e.message }); }
-
-                  // 3. Latest audit data
-                  try {
-                    const { data: audData } = await db.from('audits').select('id,audit_date,scores,homepage_sections').eq('site_id', site.id).order('audit_date', { ascending: false }).limit(1);
-                    if (!audData || audData.length === 0) {
-                      checks.push({ name: 'Audit Data', pass: false, detail: 'No audits found' });
-                    } else {
-                      const a = audData[0];
-                      const hp = a.homepage_sections;
-                      const overall = a.scores?.overall;
-                      checks.push({ name: 'Audit Data', pass: !!overall, detail: `Last: ${a.audit_date}, Overall: ${overall || 'N/A'}, Homepage: ${hp ? hp.found + '/' + hp.total + ' sections' : 'N/A'}` });
-                    }
-                  } catch (e) { checks.push({ name: 'Audit Data', pass: false, detail: e.message }); }
-
-                  // 4. Site config completeness
-                  const missing = [];
-                  if (!site.domain) missing.push('domain');
-                  if (!site.phone) missing.push('phone');
-                  if (!site.address) missing.push('address');
-                  if (!site.primary_keyword) missing.push('primary_keyword');
-                  if (!site.latitude || !site.longitude) missing.push('lat/lng');
-                  if (!site.gbp_place_id) missing.push('gbp_place_id');
-                  checks.push({ name: 'Site Config', pass: missing.length === 0, detail: missing.length === 0 ? 'All required fields present' : `Missing: ${missing.join(', ')}` });
-
-                  // 5. n8n webhook reachability
-                  try {
-                    const resp = await fetch('https://tn.reinventingai.com/webhook/run-audit', { method: 'OPTIONS', mode: 'no-cors' });
-                    checks.push({ name: 'n8n Webhook', pass: true, detail: 'Endpoint reachable (no-cors check)' });
-                  } catch (e) { checks.push({ name: 'n8n Webhook', pass: false, detail: 'Unreachable: ' + e.message }); }
-
-                  // 6. Homepage fetch test
-                  try {
-                    const url = site.domain.startsWith('http') ? site.domain : 'https://' + site.domain;
-                    const resp = await fetch(url, { mode: 'no-cors' });
-                    checks.push({ name: 'Homepage Reachable', pass: true, detail: `${url} responded` });
-                  } catch (e) { checks.push({ name: 'Homepage Reachable', pass: false, detail: e.message }); }
-
-                  setDiagResults(checks);
-                  setDiagRunning(false);
-                };
-
-                return (
-                  <div>
-                    <h4 style={{color:'#EA9320', margin:'0 0 1rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>System Diagnostics</h4>
-                    <button onClick={runDiagnostics} disabled={diagRunning} style={{
-                      background: diagRunning ? '#333' : '#EA9320', color: diagRunning ? '#888' : '#000',
-                      border:'none', borderRadius:'6px', padding:'0.5rem 1.5rem', fontWeight:700, fontSize:'0.85rem',
-                      cursor: diagRunning ? 'wait' : 'pointer', marginBottom:'1.5rem',
-                    }}>
-                      {diagRunning ? 'Running checks...' : 'Run Diagnostics'}
-                    </button>
-
-                    {diagResults && (
-                      <div>
-                        <div style={{marginBottom:'1rem', fontSize:'0.85rem', color:'#888'}}>
-                          {diagResults.filter(c => c.pass).length}/{diagResults.length} checks passed
-                        </div>
-                        {diagResults.map((c, i) => (
-                          <div key={i} style={{
-                            background: c.pass ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.08)',
-                            border: '1px solid ' + (c.pass ? '#16a34a33' : '#dc262633'),
-                            borderRadius:'6px', padding:'0.75rem 1rem', marginBottom:'0.5rem',
-                          }}>
-                            <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
-                              <span style={{color: c.pass ? '#4ade80' : '#f87171', fontWeight:700, fontSize:'1rem'}}>{c.pass ? '\u2713' : '\u2717'}</span>
-                              <span style={{fontWeight:600, color:'#eee'}}>{c.name}</span>
-                            </div>
-                            <div style={{fontSize:'0.8rem', color:'#999', marginTop:'0.25rem', paddingLeft:'1.5rem'}}>{c.detail}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {!diagResults && !diagRunning && (
-                      <div style={{color:'#555', fontSize:'0.85rem'}}>
-                        Click "Run Diagnostics" to check database connectivity, data integrity, site configuration, and API endpoints.
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              {adminTab === 'diagnostics' && <DiagnosticsPanel site={site} />}
             </div>
           </div>
         </div>
