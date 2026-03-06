@@ -2235,12 +2235,15 @@
 
           {/* ── Link Building Opportunities ── */}
           {links && links.length > 0 && (() => {
-            // Deduplicate: remove link_checklist items that overlap with directory_listings
-            const dirPlatforms = new Set((listings || []).map(l => l.platform.toLowerCase().replace(/[\s_-]+/g, '')));
+            // Deduplicate: remove link_checklist items already tracked in directory_listings
+            const dirNames = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
             const deduped = links.filter(l => {
-              if (l.link_type !== 'directory') return true;
-              const titleKey = (l.title || '').toLowerCase().replace(/[\s_-]+/g, '');
-              return !dirPlatforms.has(titleKey);
+              const title = (l.title || '').toLowerCase();
+              // Check if any directory_listings platform name appears in the link title
+              return !dirNames.some(name => {
+                const words = name.split(/\s+/).filter(w => w.length > 2 && !['business','legacy','the'].includes(w));
+                return words.length > 0 && words.every(w => title.includes(w));
+              });
             });
             if (deduped.length === 0) return null;
 
