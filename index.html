@@ -906,7 +906,7 @@
 
       React.useEffect(() => {
         if (!mapRef.current || !window.L) return;
-        const coords = rm.raw_response && rm.raw_response.grid_coords;
+        const coords = rm.grid_data || (rm.raw_response && rm.raw_response.grid_coords);
         const cLat = parseFloat(rm.grid_center_lat || (rm.raw_response && rm.raw_response.center_lat) || 0);
         const cLng = parseFloat(rm.grid_center_lng || (rm.raw_response && rm.raw_response.center_lng) || 0);
         if (!cLat || !cLng) return;
@@ -928,7 +928,7 @@
         };
 
         // Get business name for highlighting
-        const bizName = (rm.raw_response?.grid_coords || []).reduce((found, c) => {
+        const bizName = (rm.grid_data || rm.raw_response?.grid_coords || []).reduce((found, c) => {
           if (found) return found;
           const tr = c?.top_results || [];
           for (const r of tr) {
@@ -1161,7 +1161,7 @@
 
           {/* Compact stats bar */}
           {(() => {
-            const coords = rm.raw_response?.grid_coords || [];
+            const coords = rm.grid_data || rm.raw_response?.grid_coords || [];
             const rankedGridVals = grid.filter(r => r !== null);
             const pointsWithResults = coords.filter(c => (c.result_count || (c.top_results || []).length) > 0).length || grid.length;
             const allRanks = grid.map((r, i) => {
@@ -2280,9 +2280,9 @@
     }
 
     /* ── Settings Panel ──────────────────────────────────── */
-    function AdminPanel({ site, open, onClose, billingRecords, usageLogs, locationId, lastAuditDate, onAuditStarted, onAuditComplete, audits, findings, geoSignals, aiMentions, rankMaps, defaultTab }) {
+    function AdminPanel({ site, open, onClose, billingRecords, usageLogs, locationId, lastAuditDate, onAuditStarted, onAuditComplete, audits, findings, geoSignals, aiMentions, rankMaps, defaultTab, tabTrigger }) {
       const [adminTab, setAdminTab] = React.useState(defaultTab || 'settings');
-      React.useEffect(() => { if (defaultTab && open) setAdminTab(defaultTab); }, [defaultTab, open]);
+      React.useEffect(() => { if (defaultTab && open) setAdminTab(defaultTab); }, [defaultTab, open, tabTrigger]);
       const [saving, setSaving] = React.useState(false);
       const [saved, setSaved] = React.useState(false);
       const [auditStatus, setAuditStatus] = React.useState('idle');
@@ -2890,7 +2890,8 @@
       const [auditRunning, setAuditRunning] = React.useState(false);
       const [settingsOpen, setSettingsOpen] = React.useState(false);
       const [adminDefaultTab, setAdminDefaultTab] = React.useState('runs');
-      const openAdmin = (tab) => { setAdminDefaultTab(tab || 'runs'); setSettingsOpen(true); };
+      const [adminTabTrigger, setAdminTabTrigger] = React.useState(0);
+      const openAdmin = (tab) => { setAdminDefaultTab(tab || 'runs'); setAdminTabTrigger(t => t + 1); setSettingsOpen(true); };
 
       // Check if an audit is currently in progress (progress rows exist but not complete)
       React.useEffect(() => {
@@ -3101,7 +3102,7 @@
               fontFamily:'Roboto, sans-serif', marginTop:'0.25rem', transition:'all 0.2s',
             }}>{settingsOpen ? 'Close' : 'Admin'}</button>
           </header>
-          <AdminPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} usageLogs={usageLogs} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} onAuditComplete={refreshAll} audits={audits} findings={findings} geoSignals={geoSignals} aiMentions={aiMentions} rankMaps={rankMaps} defaultTab={adminDefaultTab} />
+          <AdminPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} usageLogs={usageLogs} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} onAuditComplete={() => { refreshAll(); openAdmin('runs'); }} audits={audits} findings={findings} geoSignals={geoSignals} aiMentions={aiMentions} rankMaps={rankMaps} defaultTab={adminDefaultTab} tabTrigger={adminTabTrigger} />
 
           <nav className="tab-bar">
             {tabs.map(t => (
