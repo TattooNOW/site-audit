@@ -711,9 +711,9 @@
 
       return (
         <div>
-          {/* Run Audit — opens Admin panel to Runs tab */}
+          {/* Run Audit — opens Admin panel to Info tab for verification first */}
           <div style={{textAlign:'center', marginBottom:'1.5rem'}}>
-            <button onClick={() => onOpenAdmin && onOpenAdmin('runs')} style={{
+            <button onClick={() => onOpenAdmin && onOpenAdmin('settings')} style={{
               background: auditRunning ? '#333' : '#EA9320', color: auditRunning ? '#888' : '#000',
               border: 'none', borderRadius: '8px', padding: '0.7rem 2rem', cursor: auditRunning ? 'wait' : 'pointer',
               fontWeight: 700, fontSize: '0.95rem', fontFamily: 'Roboto, sans-serif',
@@ -899,14 +899,52 @@
     }
 
     /* ── Tab: Rank Map ───────────────────────────────────── */
+
+    // Normalize grid_data: handles both flat int[] and object[] formats from DataForSEO
+    // Returns { ranks: int[], coords: [{lat,lng,top_results}] }
+    function normalizeGridData(rm, siteDomain) {
+      const raw = rm.grid_data || [];
+      const domain = (siteDomain || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*/, '').toLowerCase();
+
+      // Already flat int array (legacy / correct format)
+      if (raw.length === 0 || typeof raw[0] === 'number' || raw[0] === null) {
+        const coords = rm.raw_response?.grid_coords || [];
+        return { ranks: raw, coords };
+      }
+
+      // Object array: {lat, lng, top_results} — extract client rank from each point
+      const ranks = [];
+      const coords = raw.map(pt => {
+        const topResults = (pt.top_results || []).map(r => ({
+          rank: r.rank_group || r.rank,
+          title: r.title || '',
+          domain: (r.domain || '').replace(/^www\./, ''),
+          rating: typeof r.rating === 'object' ? r.rating?.value : r.rating,
+          reviews: typeof r.rating === 'object' ? r.rating?.votes_count : r.reviews,
+        }));
+        // Find client rank by domain match
+        let clientRank = null;
+        for (const r of topResults) {
+          if (domain && r.domain && r.domain.toLowerCase().includes(domain)) {
+            clientRank = r.rank;
+            break;
+          }
+        }
+        ranks.push(clientRank);
+        return { lat: pt.lat, lng: pt.lng, top_results: topResults, result_count: topResults.length };
+      });
+
+      return { ranks, coords };
+    }
+
     /* ── Leaflet Map for Rank Grid ──────────────────────── */
-    function RankMapLeaflet({ rm, grid, size, onSelectPoint }) {
+    function RankMapLeaflet({ rm, grid, coords: passedCoords, size, onSelectPoint, site }) {
       const mapRef = React.useRef(null);
       const mapInstanceRef = React.useRef(null);
 
       React.useEffect(() => {
         if (!mapRef.current || !window.L) return;
-        const coords = rm.grid_data || (rm.raw_response && rm.raw_response.grid_coords);
+        const coords = passedCoords || rm.raw_response?.grid_coords || [];
         const cLat = parseFloat(rm.grid_center_lat || (rm.raw_response && rm.raw_response.center_lat) || 0);
         const cLng = parseFloat(rm.grid_center_lng || (rm.raw_response && rm.raw_response.center_lng) || 0);
         if (!cLat || !cLng) return;
@@ -928,16 +966,10 @@
         };
 
         // Get business name for highlighting
-        const bizName = (rm.grid_data || rm.raw_response?.grid_coords || []).reduce((found, c) => {
-          if (found) return found;
-          const tr = c?.top_results || [];
-          for (const r of tr) {
-            if (r.domain && r.domain.toLowerCase().includes('darkside')) return r.title;
-            if (r.title && r.title.toLowerCase().includes('darkside')) return r.title;
-          }
-          return null;
-        }, null) || '';
-        const bizWord = bizName ? bizName.split(' ')[0].toLowerCase() : '';
+        const siteDomain = (site?.domain || '').replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase();
+        const siteBizName = (site?.business_name || '').toLowerCase();
+        const bizWord = siteBizName ? siteBizName.split(' ')[0] : '';
+        const bizName = site?.business_name || '';
 
         // Reverse geocode helper (approximate town from lat/lng using Nominatim)
         const townCache = {};
@@ -1064,7 +1096,7 @@
 
         setTimeout(() => map.invalidateSize(), 100);
         return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-      }, [rm, grid, size]);
+      }, [rm, grid, passedCoords, size]);
 
       return React.createElement('div', {
         ref: mapRef,
@@ -1094,7 +1126,7 @@
       );
     }
 
-    function RankMapTab({ rankMaps, locationId, onRefresh, auditRunning }) {
+    function RankMapTab({ rankMaps, locationId, onRefresh, auditRunning, site }) {
       if (!rankMaps || rankMaps.length === 0) {
         return (
           <div className="card" style={{textAlign:'center',padding:'3rem'}}>
@@ -1118,10 +1150,13 @@
       // Reset scan index when keyword changes
       React.useEffect(() => { setScanIdx(0); }, [activeKeyword]);
 
-      const grid = rm.grid_data || [];
+      const normalized = normalizeGridData(rm, site?.domain);
+      const grid = normalized.ranks;
+      const gridCoords = normalized.coords;
       const sizeRaw = rm.grid_size || '';
       const size = typeof sizeRaw === 'number' ? sizeRaw : (parseInt(sizeRaw) || Math.round(Math.sqrt(grid.length)) || 5);
-      const centerRank = rm.center_rank || (rm.raw_response && rm.raw_response.center_rank) || null;
+      const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
+      const centerRank = grid[centerIdx] ?? (rm.raw_response && rm.raw_response.center_rank) ?? null;
       const radiusMi = rm.grid_radius_mi || (rm.raw_response && rm.raw_response.radius_mi) || null;
 
       return (
@@ -1161,11 +1196,10 @@
 
           {/* Compact stats bar */}
           {(() => {
-            const coords = rm.grid_data || rm.raw_response?.grid_coords || [];
             const rankedGridVals = grid.filter(r => r !== null);
-            const pointsWithResults = coords.filter(c => (c.result_count || (c.top_results || []).length) > 0).length || grid.length;
+            const pointsWithResults = gridCoords.filter(c => (c.result_count || (c.top_results || []).length) > 0).length || grid.length;
             const allRanks = grid.map((r, i) => {
-              const c = coords[i];
+              const c = gridCoords[i];
               const hasResults = c ? (c.result_count || (c.top_results || []).length) > 0 : true;
               return hasResults ? (r || 21) : null;
             }).filter(r => r !== null);
@@ -1191,7 +1225,7 @@
           {/* Grid Map with Leaflet */}
           <section className="card" style={{marginBottom:'2rem'}}>
             <h3 style={{marginTop:0}}>Grid Map — "{rm.keyword}" <SourceInfo text={"DataForSEO Local Finder API\n8\u00D78 grid, 3mi radius\nChecks Google Maps rank at each point"} /></h3>
-            <RankMapLeaflet rm={rm} grid={grid} size={size} onSelectPoint={setDetailPoint} />
+            <RankMapLeaflet rm={rm} grid={grid} coords={gridCoords} size={size} onSelectPoint={setDetailPoint} site={site} />
             <div style={{display:'flex', gap:'1.5rem', flexWrap:'wrap', fontSize:'0.8rem', color:'#aaa', marginTop:'0.5rem'}}>
               <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#16a34a', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>Top 3 (Pack)</span>
               <span><span style={{display:'inline-block', width:'14px', height:'14px', background:'#c2710c', borderRadius:'50%', marginRight:'5px', verticalAlign:'middle'}}></span>4-10</span>
@@ -2133,7 +2167,6 @@
         'tattoonow_legacy': 'https://www.tattoonow.com/tattoo-industry-services/memberships/',
         'tattoodo': 'https://www.tattoodo.com/for-artists',
         'tattoofilter': 'https://www.tattoofilter.com/login',
-        'inkmatch': 'https://www.inkmatch.com/for-artists',
         'tattoocloud': 'https://www.tattoocloud.com',
         // General directories
         'hotfrog': 'https://www.hotfrog.com/add',
@@ -2239,7 +2272,6 @@
             const dirNames = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
             const deduped = links.filter(l => {
               const title = (l.title || '').toLowerCase();
-              // Check if any directory_listings platform name appears in the link title
               return !dirNames.some(name => {
                 const words = name.split(/\s+/).filter(w => w.length > 2 && !['business','legacy','the'].includes(w));
                 return words.length > 0 && words.every(w => title.includes(w));
@@ -2249,6 +2281,9 @@
 
             const typeColors = { authority: '#a78bfa', directory: '#60a5fa', sponsorship: '#4ade80', content: '#fbbf24', outreach: '#f97316' };
             const typeIcons = { authority: '\uD83C\uDFDB', directory: '\uD83D\uDCD6', sponsorship: '\uD83E\uDD1D', content: '\u270D\uFE0F', outreach: '\uD83D\uDCE7' };
+            const linkTypes = [...new Set(deduped.map(l => l.link_type))];
+            const [activeLinkType, setActiveLinkType] = React.useState('all');
+            const shown = activeLinkType === 'all' ? deduped : deduped.filter(l => l.link_type === activeLinkType);
             const done = deduped.filter(l => l.status === 'done').length;
 
             return (
@@ -2257,10 +2292,23 @@
                   <h3 style={{margin:0}}>Link Building Opportunities</h3>
                   <span style={{color:'#888', fontSize:'0.85rem'}}>{done}/{deduped.length} complete</span>
                 </div>
+                <div style={{display:'flex', gap:'0.5rem', marginBottom:'1rem', flexWrap:'wrap'}}>
+                  {['all', ...linkTypes].map(t => (
+                    <button key={t} onClick={() => setActiveLinkType(t)} style={{
+                      padding:'0.3rem 0.75rem', borderRadius:'16px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
+                      background: activeLinkType === t ? (typeColors[t] || '#EA9320') : 'transparent',
+                      color: activeLinkType === t ? '#000' : '#aaa',
+                      border: '1px solid ' + (activeLinkType === t ? (typeColors[t] || '#EA9320') : '#333'),
+                      cursor:'pointer', fontWeight: activeLinkType === t ? 700 : 400, textTransform:'capitalize',
+                    }}>
+                      {t === 'all' ? `All (${deduped.length})` : `${(typeIcons[t]||'')} ${t.replace(/_/g,' ')} (${deduped.filter(l=>l.link_type===t).length})`}
+                    </button>
+                  ))}
+                </div>
                 <table>
                   <thead><tr><th>Priority</th><th>Type</th><th>Title</th><th>Target</th><th>Cost</th><th>Status</th></tr></thead>
                   <tbody>
-                    {deduped.sort((a,b)=>(a.priority||99)-(b.priority||99)).map(l => {
+                    {shown.sort((a,b)=>(a.priority||99)-(b.priority||99)).map(l => {
                       const color = typeColors[l.link_type] || '#888';
                       return (
                         <tr key={l.id} style={{background: l.status==='done'?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
@@ -2471,6 +2519,7 @@
               {adminTabBtn('settings', 'Info')}
               {adminTabBtn('runs', 'Audit Runs')}
               {adminTabBtn('billing', 'Billing')}
+              {adminTabBtn('diagnostics', 'Diagnostics')}
             </div>
 
             {/* Content area */}
@@ -2594,6 +2643,19 @@
               {/* ── SETTINGS TAB ─────────────────────────── */}
               {adminTab === 'settings' && (
                 <div>
+                  {/* Confirmation banner — verify info before running */}
+                  <div style={{background:'rgba(234,147,32,0.1)', border:'1px solid #EA9320', borderRadius:'8px', padding:'1rem', marginBottom:'1.5rem'}}>
+                    <div style={{color:'#EA9320', fontWeight:700, fontSize:'0.9rem', marginBottom:'0.35rem'}}>Before running an audit</div>
+                    <div style={{color:'#ccc', fontSize:'0.85rem', marginBottom:'0.75rem'}}>Make sure the info below is accurate — it's used for search rankings, NAP matching, and local SEO checks.</div>
+                    <button onClick={() => { save().then(() => { setAdminTab('runs'); }); }} disabled={auditStatus === 'running'} style={{
+                      background: auditStatus === 'running' ? '#333' : '#EA9320', color: auditStatus === 'running' ? '#888' : '#000',
+                      border:'none', borderRadius:'6px', padding:'0.5rem 1.5rem', fontWeight:700, fontSize:'0.85rem',
+                      cursor: auditStatus === 'running' ? 'wait' : 'pointer',
+                    }}>
+                      {auditStatus === 'running' ? 'Audit Running...' : 'Confirm Info & Run Audit'}
+                    </button>
+                  </div>
+
                   <h4 style={{color:'#EA9320', margin:'0 0 0.75rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>Business Info</h4>
                   <div style={{marginBottom:'1rem'}}>
                     <label style={labelStyle}>Domain</label>
@@ -2778,6 +2840,124 @@
                   )}
                 </div>
               )}
+
+              {/* ── DIAGNOSTICS TAB ──────────────────────── */}
+              {adminTab === 'diagnostics' && (() => {
+                const [diagResults, setDiagResults] = React.useState(null);
+                const [diagRunning, setDiagRunning] = React.useState(false);
+
+                const runDiagnostics = async () => {
+                  setDiagRunning(true);
+                  const checks = [];
+
+                  // 1. Supabase connectivity
+                  try {
+                    const { data, error } = await db.from('sites').select('id,domain,business_name').eq('id', site.id).single();
+                    checks.push({ name: 'Supabase Connection', pass: !error && !!data, detail: error ? error.message : `Found: ${data.business_name}` });
+                  } catch (e) { checks.push({ name: 'Supabase Connection', pass: false, detail: e.message }); }
+
+                  // 2. Rank Map data integrity
+                  try {
+                    const { data: rmData } = await db.from('rank_maps').select('id,keyword,scan_date,grid_data,top_3_pct,raw_response').eq('site_id', site.id).order('scan_date', { ascending: false }).limit(5);
+                    if (!rmData || rmData.length === 0) {
+                      checks.push({ name: 'Rank Map Data', pass: false, detail: 'No rank map scans found' });
+                    } else {
+                      let issues = [];
+                      rmData.forEach(rm => {
+                        const gd = rm.grid_data || [];
+                        const coords = rm.raw_response?.grid_coords || [];
+                        if (gd.length !== coords.length) issues.push(`${rm.keyword}: grid_data(${gd.length}) != coords(${coords.length})`);
+                        if (coords.some(c => c === null)) issues.push(`${rm.keyword}: null entries in grid_coords`);
+                        if (gd.length === 0) issues.push(`${rm.keyword}: empty grid_data`);
+                      });
+                      checks.push({
+                        name: 'Rank Map Data',
+                        pass: issues.length === 0,
+                        detail: issues.length === 0 ? `${rmData.length} scans OK. Latest: ${rmData[0].keyword} (${rmData[0].top_3_pct}% top-3, ${rmData[0].scan_date})` : issues.join('; '),
+                      });
+                    }
+                  } catch (e) { checks.push({ name: 'Rank Map Data', pass: false, detail: e.message }); }
+
+                  // 3. Latest audit data
+                  try {
+                    const { data: audData } = await db.from('audits').select('id,audit_date,scores,homepage_sections').eq('site_id', site.id).order('audit_date', { ascending: false }).limit(1);
+                    if (!audData || audData.length === 0) {
+                      checks.push({ name: 'Audit Data', pass: false, detail: 'No audits found' });
+                    } else {
+                      const a = audData[0];
+                      const hp = a.homepage_sections;
+                      const overall = a.scores?.overall;
+                      checks.push({ name: 'Audit Data', pass: !!overall, detail: `Last: ${a.audit_date}, Overall: ${overall || 'N/A'}, Homepage: ${hp ? hp.found + '/' + hp.total + ' sections' : 'N/A'}` });
+                    }
+                  } catch (e) { checks.push({ name: 'Audit Data', pass: false, detail: e.message }); }
+
+                  // 4. Site config completeness
+                  const missing = [];
+                  if (!site.domain) missing.push('domain');
+                  if (!site.phone) missing.push('phone');
+                  if (!site.address) missing.push('address');
+                  if (!site.primary_keyword) missing.push('primary_keyword');
+                  if (!site.latitude || !site.longitude) missing.push('lat/lng');
+                  if (!site.gbp_place_id) missing.push('gbp_place_id');
+                  checks.push({ name: 'Site Config', pass: missing.length === 0, detail: missing.length === 0 ? 'All required fields present' : `Missing: ${missing.join(', ')}` });
+
+                  // 5. n8n webhook reachability
+                  try {
+                    const resp = await fetch('https://tn.reinventingai.com/webhook/run-audit', { method: 'OPTIONS', mode: 'no-cors' });
+                    checks.push({ name: 'n8n Webhook', pass: true, detail: 'Endpoint reachable (no-cors check)' });
+                  } catch (e) { checks.push({ name: 'n8n Webhook', pass: false, detail: 'Unreachable: ' + e.message }); }
+
+                  // 6. Homepage fetch test
+                  try {
+                    const url = site.domain.startsWith('http') ? site.domain : 'https://' + site.domain;
+                    const resp = await fetch(url, { mode: 'no-cors' });
+                    checks.push({ name: 'Homepage Reachable', pass: true, detail: `${url} responded` });
+                  } catch (e) { checks.push({ name: 'Homepage Reachable', pass: false, detail: e.message }); }
+
+                  setDiagResults(checks);
+                  setDiagRunning(false);
+                };
+
+                return (
+                  <div>
+                    <h4 style={{color:'#EA9320', margin:'0 0 1rem 0', fontSize:'0.85rem', textTransform:'uppercase', letterSpacing:'0.5px'}}>System Diagnostics</h4>
+                    <button onClick={runDiagnostics} disabled={diagRunning} style={{
+                      background: diagRunning ? '#333' : '#EA9320', color: diagRunning ? '#888' : '#000',
+                      border:'none', borderRadius:'6px', padding:'0.5rem 1.5rem', fontWeight:700, fontSize:'0.85rem',
+                      cursor: diagRunning ? 'wait' : 'pointer', marginBottom:'1.5rem',
+                    }}>
+                      {diagRunning ? 'Running checks...' : 'Run Diagnostics'}
+                    </button>
+
+                    {diagResults && (
+                      <div>
+                        <div style={{marginBottom:'1rem', fontSize:'0.85rem', color:'#888'}}>
+                          {diagResults.filter(c => c.pass).length}/{diagResults.length} checks passed
+                        </div>
+                        {diagResults.map((c, i) => (
+                          <div key={i} style={{
+                            background: c.pass ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.08)',
+                            border: '1px solid ' + (c.pass ? '#16a34a33' : '#dc262633'),
+                            borderRadius:'6px', padding:'0.75rem 1rem', marginBottom:'0.5rem',
+                          }}>
+                            <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
+                              <span style={{color: c.pass ? '#4ade80' : '#f87171', fontWeight:700, fontSize:'1rem'}}>{c.pass ? '\u2713' : '\u2717'}</span>
+                              <span style={{fontWeight:600, color:'#eee'}}>{c.name}</span>
+                            </div>
+                            <div style={{fontSize:'0.8rem', color:'#999', marginTop:'0.25rem', paddingLeft:'1.5rem'}}>{c.detail}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!diagResults && !diagRunning && (
+                      <div style={{color:'#555', fontSize:'0.85rem'}}>
+                        Click "Run Diagnostics" to check database connectivity, data integrity, site configuration, and API endpoints.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -3118,7 +3298,7 @@
 
           {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} locationId={locationId} site={site} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} auditRunning={auditRunning} onOpenAdmin={openAdmin} />}
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
-          {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} />}
+          {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} site={site} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
           {activeTab === 'insights' && <InsightsTab latestFindings={latestFindings} latestGeo={latestGeo} aiMentions={aiMentions} businessName={site.business_name} locationId={locationId} onRefresh={refreshSection} auditRunning={auditRunning} />}
           {activeTab === 'directories' && <DirectoryTab listings={directoryListings} site={site} locationId={locationId} onRefresh={() => refreshSection('directories')} links={linkChecklist} auditRunning={auditRunning} />}
