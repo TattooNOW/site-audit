@@ -50,6 +50,16 @@
     .pill { display:inline-block; padding:0.15rem 0.6rem; border-radius:10px; font-size:0.75rem; font-weight:600; }
     .progress-bar { background:#333; border-radius:4px; height:8px; overflow:hidden; }
     .progress-fill { height:100%; border-radius:4px; transition:width 0.3s; }
+    @keyframes stickRun {
+      0%   { left: 0%; transform: scaleX(1); }
+      48%  { left: calc(100% - 20px); transform: scaleX(1); }
+      50%  { left: calc(100% - 20px); transform: scaleX(-1); }
+      98%  { left: 0%; transform: scaleX(-1); }
+      100% { left: 0%; transform: scaleX(1); }
+    }
+    @keyframes stickLegs {
+      0%, 100% { content: '\u{1F3C3}'; }
+    }
     .rank-popup .leaflet-popup-content-wrapper { background:#1a1a1a; color:#fafafa; border:1px solid #333; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.6); }
     .rank-popup .leaflet-popup-tip { background:#1a1a1a; border:1px solid #333; }
     .rank-popup .leaflet-popup-content { margin:12px 14px; color:#fafafa; }
@@ -489,7 +499,7 @@
     }
 
     /* ── AuditRunCard — unified run button + progress tracker ── */
-    function AuditRunCard({ locationId, site, lastAuditDate, onAuditStarted, auditRunning }) {
+    function AuditRunCard({ locationId, site, lastAuditDate, onAuditStarted, onAuditComplete, auditRunning }) {
       const [status, setStatus] = React.useState(auditRunning ? 'running' : 'idle');
       const [sections, setSections] = React.useState([]);
       const channelRef = React.useRef(null);
@@ -540,7 +550,8 @@
             const sec = row.section || 'full';
             if (row.step === 'complete' && sec === 'full') {
               setStatus('done');
-              setTimeout(() => setStatus('idle'), 3000);
+              if (onAuditComplete) onAuditComplete();
+              setTimeout(() => setStatus('idle'), 5000);
               channel.unsubscribe();
               return;
             }
@@ -644,8 +655,17 @@
             </>
           ) : (
             <>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem'}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem', position:'relative'}}>
                 <h3 style={{margin:0, fontSize:'1rem', color:'#EA9320'}}>Audit Running...</h3>
+                <span style={{
+                  position:'absolute', left:0, right:0, top:'-2px',
+                  fontSize:'1.1rem', lineHeight:1, pointerEvents:'none',
+                }}>
+                  <span style={{
+                    position:'absolute',
+                    animation: 'stickRun 3s linear infinite',
+                  }}>{'\u{1F3C3}'}</span>
+                </span>
                 <span style={{fontSize:'0.8rem', color:'#888'}}>Step {doneCount + (activeSection ? 1 : 0)} of {allSections.length}</span>
               </div>
               {/* Progress bar */}
@@ -2260,7 +2280,7 @@
     }
 
     /* ── Settings Panel ──────────────────────────────────── */
-    function AdminPanel({ site, open, onClose, billingRecords, usageLogs, locationId, lastAuditDate, onAuditStarted, audits, findings, geoSignals, aiMentions, rankMaps, defaultTab }) {
+    function AdminPanel({ site, open, onClose, billingRecords, usageLogs, locationId, lastAuditDate, onAuditStarted, onAuditComplete, audits, findings, geoSignals, aiMentions, rankMaps, defaultTab }) {
       const [adminTab, setAdminTab] = React.useState(defaultTab || 'settings');
       React.useEffect(() => { if (defaultTab && open) setAdminTab(defaultTab); }, [defaultTab, open]);
       const [saving, setSaving] = React.useState(false);
@@ -2457,7 +2477,7 @@
               {adminTab === 'runs' && (
                 <div>
                   {/* Full Audit Run Card with credits + section progress */}
-                  <AuditRunCard locationId={locationId} site={site} lastAuditDate={lastAuditDate} onAuditStarted={() => { setAuditStatus('running'); if (onAuditStarted) onAuditStarted(); }} auditRunning={auditStatus === 'running'} />
+                  <AuditRunCard locationId={locationId} site={site} lastAuditDate={lastAuditDate} onAuditStarted={() => { setAuditStatus('running'); if (onAuditStarted) onAuditStarted(); }} onAuditComplete={onAuditComplete} auditRunning={auditStatus === 'running'} />
 
                   {/* Unified chronological timeline: audits + rank map scans */}
                   {(() => {
@@ -2941,6 +2961,40 @@
         return () => { canceled = true; };
       }, [locationId]);
 
+      // Full refresh — re-fetch ALL data after audit completes
+      const refreshAll = React.useCallback(async () => {
+        if (!site) return;
+        const id = site.id;
+        try {
+          const [a, f, g, ai, rm, comp, lc, dl, br, ul, s] = await Promise.allSettled([
+            db.from('audits').select('*').eq('site_id', id).order('audit_date', {ascending:true}),
+            db.from('findings').select('*').eq('site_id', id),
+            db.from('geo_signals').select('*').eq('site_id', id),
+            db.from('ai_mentions').select('*').eq('site_id', id),
+            db.from('rank_maps').select('*').eq('site_id', id).order('scan_date', {ascending:false}),
+            db.from('competitors').select('*').eq('site_id', id).order('created_at', {ascending:false}),
+            db.from('link_checklist').select('*').eq('site_id', id).order('priority', {ascending:true}),
+            db.from('directory_listings').select('*').eq('site_id', id),
+            db.from('audit_billing').select('*').eq('site_id', id).order('audit_date', {ascending:false}),
+            db.from('apify_usage_log').select('*').eq('site_id', id).order('created_at', {ascending:false}),
+            db.from('sites').select('*').eq('id', id).maybeSingle(),
+          ]);
+          const safe = (r) => r.status === 'fulfilled' && !r.value.error ? r.value.data || [] : [];
+          setAudits(safe(a));
+          setFindings(safe(f));
+          setGeoSignals(safe(g));
+          setAiMentions(safe(ai));
+          setRankMaps(safe(rm));
+          setCompetitors(safe(comp));
+          setLinkChecklist(safe(lc));
+          setDirectoryListings(safe(dl));
+          setBillingRecords(safe(br));
+          setUsageLogs(safe(ul));
+          if (s.status === 'fulfilled' && s.value.data) setSite(s.value.data);
+          setAuditRunning(false);
+        } catch (e) { console.error('refreshAll error:', e); }
+      }, [site]);
+
       // Section refreshers — re-fetch a single table after n8n updates it
       const refreshSection = React.useCallback(async (section) => {
         if (!site) return;
@@ -3047,7 +3101,7 @@
               fontFamily:'Roboto, sans-serif', marginTop:'0.25rem', transition:'all 0.2s',
             }}>{settingsOpen ? 'Close' : 'Admin'}</button>
           </header>
-          <AdminPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} usageLogs={usageLogs} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} audits={audits} findings={findings} geoSignals={geoSignals} aiMentions={aiMentions} rankMaps={rankMaps} defaultTab={adminDefaultTab} />
+          <AdminPanel site={site} open={settingsOpen} onClose={() => setSettingsOpen(false)} billingRecords={billingRecords} usageLogs={usageLogs} locationId={locationId} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} onAuditComplete={refreshAll} audits={audits} findings={findings} geoSignals={geoSignals} aiMentions={aiMentions} rankMaps={rankMaps} defaultTab={adminDefaultTab} />
 
           <nav className="tab-bar">
             {tabs.map(t => (
