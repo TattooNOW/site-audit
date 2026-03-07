@@ -1558,7 +1558,7 @@
     }
 
     /* ── Tab: Homepage ──────────────────────────────────── */
-    function HomepageTab({ homepageSections }) {
+    function HomepageTab({ homepageSections, site }) {
       if (!homepageSections || !homepageSections.sections) {
         return <p style={{color:'#888'}}>No homepage section analysis yet. Run a full audit first.</p>;
       }
@@ -1619,20 +1619,32 @@
                     </span>
                   </td>
                   <td style={{fontSize:'0.85rem', color: s.found ? '#ccc' : '#f9a8a8', maxWidth:'500px'}}>
-                    {s.found ? (
-                      s.matched_content && s.matched_content.length > 0 ? (
-                        <div>
-                          <div style={{display:'flex', flexWrap:'wrap', gap:'0.35rem', marginBottom: s.notes ? '0.4rem' : 0}}>
-                            {s.matched_content.map((item, j) => (
+                    {s.found ? (() => {
+                      // Use matched_content from workflow, or fall back to site data for known sections
+                      let content = s.matched_content && s.matched_content.length > 0 ? s.matched_content : null;
+                      if (!content && site) {
+                        if (/^services$/i.test(s.name) && site.detected_services && site.detected_services.length > 0) {
+                          content = site.detected_services.slice(0, 20);
+                        }
+                      }
+                      if (content && content.length > 0) {
+                        const cleanNotes = s.notes && !/Found element with (class|id)/.test(s.notes) ? s.notes : null;
+                        return <div>
+                          <div style={{display:'flex', flexWrap:'wrap', gap:'0.35rem', marginBottom: cleanNotes ? '0.4rem' : 0}}>
+                            {content.map((item, j) => (
                               <span key={j} className="pill" style={{background:'rgba(74,222,128,0.1)', color:'#4ade80', fontSize:'0.8rem'}}>
                                 {item}
                               </span>
                             ))}
+                            {!s.matched_content && site && site.detected_services && site.detected_services.length > 20 && (
+                              <span style={{color:'#888', fontSize:'0.75rem'}}>+{site.detected_services.length - 20} more</span>
+                            )}
                           </div>
-                          {s.notes && !/Found element with (class|id)/.test(s.notes) && <div style={{color:'#888', fontSize:'0.8rem'}}>{s.notes}</div>}
-                        </div>
-                      ) : (s.notes && !/Found element with (class|id)/.test(s.notes) ? s.notes : '\u2713 ' + s.name + ' detected on page')
-                    ) : (s.recommendation || 'Section not detected')}
+                          {cleanNotes && <div style={{color:'#888', fontSize:'0.8rem'}}>{cleanNotes}</div>}
+                        </div>;
+                      }
+                      return s.notes && !/Found element with (class|id)/.test(s.notes) ? s.notes : '\u2713 ' + s.name + ' detected on page';
+                    })() : (s.recommendation || 'Section not detected')}
                   </td>
                 </tr>
               ))}
@@ -3359,7 +3371,7 @@
           </nav>
 
           {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} locationId={locationId} site={site} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} auditRunning={auditRunning} onOpenAdmin={openAdmin} />}
-          {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
+          {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} site={site} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} site={site} keywordSuggestions={keywordSuggestions} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
           {activeTab === 'insights' && <InsightsTab latestFindings={latestFindings} latestGeo={latestGeo} aiMentions={aiMentions} businessName={site.business_name} locationId={locationId} onRefresh={refreshSection} auditRunning={auditRunning} />}
