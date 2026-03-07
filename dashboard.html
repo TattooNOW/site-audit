@@ -1620,9 +1620,9 @@
                               </span>
                             ))}
                           </div>
-                          {s.notes && <div style={{color:'#888', fontSize:'0.8rem'}}>{s.notes}</div>}
+                          {s.notes && !/Found element with (class|id)/.test(s.notes) && <div style={{color:'#888', fontSize:'0.8rem'}}>{s.notes}</div>}
                         </div>
-                      ) : (s.notes || '\u2713 Detected on page')
+                      ) : (s.notes && !/Found element with (class|id)/.test(s.notes) ? s.notes : '\u2713 ' + s.name + ' detected on page')
                     ) : (s.recommendation || 'Section not detected')}
                   </td>
                 </tr>
@@ -1913,7 +1913,7 @@
                 border: '1px solid ' + (days === d ? '#EA9320' : '#333'), fontWeight: days === d ? 700 : 400,
               }}>{d * 24}h</button>
             ))}
-            <button onClick={() => fetchClarity(days)} style={{marginLeft:'auto', padding:'0.3rem 0.8rem', borderRadius:'4px', cursor:'pointer', fontSize:'0.8rem', background:'#1a1a1a', color:'#888', border:'1px solid #333'}}>Refresh</button>
+            <button onClick={() => fetchClarity(days)} style={{marginLeft:'auto', padding:'0.4rem 1rem', borderRadius:'8px', cursor:'pointer', fontSize:'0.8rem', background:'#EA9320', color:'#000', border:'none', fontWeight:700, boxShadow:'0 2px 6px rgba(0,0,0,0.3)'}}>Refresh</button>
           </div>
 
           {/* Traffic Overview */}
