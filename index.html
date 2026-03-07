@@ -2274,16 +2274,14 @@
       );
     }
 
-    /* ── Tab: Directories & Links (merged) ──────────────── */
+    /* ── Tab: Directories & Links (unified) ──────────────── */
     function DirectoryTab({ listings, site, locationId, onRefresh, links, auditRunning }) {
+      const [filterKind, setFilterKind] = React.useState('all');
       const [filterStatus, setFilterStatus] = React.useState('all');
-      const [filterTier, setFilterTier] = React.useState('all');
-
-      if (listings.length === 0) return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No directory audit run yet</h3><p style={{color:'#666'}}>Run a directory listing audit to populate.</p></div>;
+      const [filterCategory, setFilterCategory] = React.useState('all');
 
       // Known submit/claim URLs for common platforms
       const submitUrls = {
-        // Tier 1: Critical platforms
         'google_business_profile': 'https://business.google.com',
         'google': 'https://business.google.com',
         'yelp': 'https://biz.yelp.com/claim',
@@ -2292,7 +2290,6 @@
         'apple_maps': 'https://businessconnect.apple.com',
         'bing_places': 'https://www.bing.com/forbusiness/',
         'bbb': 'https://www.bbb.org/get-accredited',
-        // Tier 2: High impact
         'foursquare': 'https://business.foursquare.com/claim',
         'mapquest': 'https://www.mapquest.com/my-business',
         'nextdoor': 'https://nextdoor.com/create-business',
@@ -2301,20 +2298,17 @@
         'superpages': 'https://www.superpages.com',
         'manta': 'https://www.manta.com',
         'tripadvisor': 'https://www.tripadvisor.com/Owners',
-        // Social platforms
         'instagram': 'https://www.instagram.com',
         'instagram_business': 'https://www.instagram.com',
         'linkedin': 'https://www.linkedin.com/company/setup/new/',
         'tiktok': 'https://www.tiktok.com/signup',
         'x_twitter': 'https://x.com/i/flow/signup',
         'youtube': 'https://www.youtube.com/create_channel',
-        // Tattoo directories
         'tattoonow': 'https://www.tattoonow.com/tattoo-industry-services/memberships/',
         'tattoonow_legacy': 'https://www.tattoonow.com/tattoo-industry-services/memberships/',
         'tattoodo': 'https://www.tattoodo.com/for-artists',
         'tattoofilter': 'https://www.tattoofilter.com/login',
         'tattoocloud': 'https://www.tattoocloud.com',
-        // General directories
         'hotfrog': 'https://www.hotfrog.com/add',
         'citysearch': 'https://www.citysearch.com',
         'chamberofcommerce': 'https://www.chamberofcommerce.com/add-your-business',
@@ -2336,18 +2330,60 @@
         return submitUrls[key] || null;
       }
 
-      const filtered = listings.filter(l => filterStatus==='all'||l.status===filterStatus).filter(l => filterTier==='all'||l.tier===parseInt(filterTier));
+      const tierNames = {1:'Critical',2:'High Impact',3:'Industry',4:'Secondary',5:'Regional'};
+      const typeColors = { authority: '#a78bfa', directory: '#60a5fa', sponsorship: '#4ade80', content: '#fbbf24', outreach: '#f97316' };
+      const typeIcons = { authority: '\uD83C\uDFDB', directory: '\uD83D\uDCD6', sponsorship: '\uD83E\uDD1D', content: '\u270D\uFE0F', outreach: '\uD83D\uDCE7' };
+      const napIssueLabels = {'name_variation':'Name Mismatch','wrong_address':'Wrong Address','wrong_phone':'Wrong Phone','wrong_city':'Wrong City','old_address':'Old Address','wrong_category':'Wrong Category','dead_link_risk':'Dead Link Risk'};
+
+      // Deduplicate links against directory listings
+      const dirNames = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
+      const dedupedLinks = (links || []).filter(l => {
+        const title = (l.title || '').toLowerCase();
+        return !dirNames.some(name => {
+          const words = name.split(/\s+/).filter(w => w.length > 2 && !['business','legacy','the'].includes(w));
+          return words.length > 0 && words.every(w => title.includes(w));
+        });
+      });
+
+      // Build unified rows
+      const dirRows = (listings || []).map(l => ({
+        ...l, _kind: 'directory',
+        _name: l.platform.replace(/_/g, ' '),
+        _status: l.status,
+        _category: tierNames[l.tier] || 'Tier ' + l.tier,
+        _sortKey: (l.tier || 9) * 1000 + (l.platform || '').charCodeAt(0),
+      }));
+      const linkRows = dedupedLinks.map(l => ({
+        ...l, _kind: 'link',
+        _name: l.title,
+        _status: l.status || 'pending',
+        _category: (l.link_type || 'other').replace(/_/g, ' '),
+        _sortKey: 10000 + (l.priority || 99),
+      }));
+      const allRows = [...dirRows, ...linkRows];
+
+      // Stats
       const listed = listings.filter(l => l.status==='listed').length;
       const needsAtt = listings.filter(l => l.status==='needs_fix'||l.status==='needs_claim').length;
       const notListed = listings.filter(l => l.status==='not_listed').length;
-      const tierNames = {1:'Critical',2:'High Impact',3:'Industry',4:'Secondary',5:'Regional'};
-
-      // NAP consistency stats
+      const linksDone = dedupedLinks.filter(l => l.status === 'done').length;
       const withNap = listings.filter(l => l.status === 'listed' || l.status === 'needs_fix' || l.status === 'needs_claim');
       const napClean = withNap.filter(l => !l.nap_issues || l.nap_issues.length === 0).length;
       const napIssues = withNap.filter(l => l.nap_issues && l.nap_issues.length > 0).length;
       const napPct = withNap.length > 0 ? Math.round((napClean / withNap.length) * 100) : 0;
-      const napIssueLabels = {'name_variation':'Name Mismatch','wrong_address':'Wrong Address','wrong_phone':'Wrong Phone','wrong_city':'Wrong City','old_address':'Old Address','wrong_category':'Wrong Category','dead_link_risk':'Dead Link Risk'};
+
+      if (listings.length === 0 && dedupedLinks.length === 0) return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No directory audit run yet</h3><p style={{color:'#666'}}>Run a directory listing audit to populate.</p></div>;
+
+      // Filter
+      const filtered = allRows
+        .filter(r => filterKind === 'all' || r._kind === filterKind)
+        .filter(r => filterStatus === 'all' || r._status === filterStatus)
+        .filter(r => filterCategory === 'all' || r._category === filterCategory);
+
+      // Available statuses and categories based on current kind filter
+      const visibleRows = allRows.filter(r => filterKind === 'all' || r._kind === filterKind);
+      const availableStatuses = [...new Set(visibleRows.map(r => r._status))].sort();
+      const availableCategories = [...new Set(visibleRows.map(r => r._category))].sort();
 
       return (
         <div>
@@ -2356,6 +2392,7 @@
             <div className="score-card" style={{borderTop:'2px solid #fbbf24'}}><h3>Needs Fix</h3><div className="value" style={{color:'#fbbf24'}}>{needsAtt}</div></div>
             <div className="score-card" style={{borderTop:'2px solid #f87171'}}><h3>Not Listed</h3><div className="value" style={{color:'#f87171'}}>{notListed}</div></div>
             <div className="score-card" style={{borderTop:'2px solid #60a5fa'}}><h3>NAP</h3><div className="value" style={{color: napPct >= 80 ? '#4ade80' : napPct >= 50 ? '#fbbf24' : '#f87171'}}>{napPct}%</div></div>
+            {dedupedLinks.length > 0 && <div className="score-card" style={{borderTop:'2px solid #a78bfa'}}><h3>Links</h3><div className="value" style={{color:'#a78bfa'}}>{linksDone}/{dedupedLinks.length}</div></div>}
             {locationId && <FetchNewButton locationId={locationId} section="directories" label="Verify Listings" onRefresh={onRefresh} hidden={auditRunning} />}
           </section>
           {napIssues > 0 && (
@@ -2372,106 +2409,72 @@
               </div>
             </div>
           )}
-          <div style={{display:'flex', gap:'0.75rem', marginBottom:'1rem'}}>
+          {/* Kind pills + filters */}
+          <div style={{display:'flex', gap:'0.75rem', marginBottom:'1rem', flexWrap:'wrap', alignItems:'center'}}>
+            <div style={{display:'flex', gap:'0.4rem'}}>
+              {[['all','All'],['directory','Directories'],['link','Link Opportunities']].map(([k,label]) => (
+                <button key={k} onClick={() => { setFilterKind(k); setFilterStatus('all'); setFilterCategory('all'); }} style={{
+                  padding:'0.35rem 0.85rem', borderRadius:'16px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
+                  background: filterKind === k ? '#EA9320' : 'transparent',
+                  color: filterKind === k ? '#000' : '#aaa',
+                  border: '1px solid ' + (filterKind === k ? '#EA9320' : '#333'),
+                  cursor:'pointer', fontWeight: filterKind === k ? 700 : 400,
+                }}>
+                  {label} ({k === 'all' ? allRows.length : allRows.filter(r => r._kind === k).length})
+                </button>
+              ))}
+            </div>
             <select className="filter" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
               <option value="all">All Statuses</option>
-              <option value="listed">Listed</option>
-              <option value="needs_fix">Needs Fix</option>
-              <option value="needs_claim">Needs Claim</option>
-              <option value="not_listed">Not Listed</option>
+              {availableStatuses.map(s => <option key={s} value={s}>{s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
             </select>
-            <select className="filter" value={filterTier} onChange={e=>setFilterTier(e.target.value)}>
-              <option value="all">All Tiers</option>
-              {[1,2,3,4,5].map(t => <option key={t} value={t}>Tier {t}: {tierNames[t]}</option>)}
+            <select className="filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}>
+              <option value="all">{filterKind === 'link' ? 'All Types' : filterKind === 'directory' ? 'All Tiers' : 'All Categories'}</option>
+              {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <table>
-            <thead><tr><th>Status</th><th>Platform</th><th>Tier</th><th>NAP</th><th>Claimed</th><th>Cost</th><th>Link</th></tr></thead>
+            <thead><tr><th>Status</th><th>Name</th><th>Category</th><th>Details</th><th>Cost</th><th>Action</th></tr></thead>
             <tbody>
-              {filtered.sort((a,b)=>a.tier-b.tier||a.platform.localeCompare(b.platform)).map(l => {
-                const claimUrl = getSubmitUrl(l);
-                const hasNapIssues = l.nap_issues && l.nap_issues.length > 0;
-                const napStatus = (l.status === 'not_listed') ? null : hasNapIssues ? false : true;
-                return (
-                  <tr key={l.id} style={{background:statusRowBg(l.status)}}>
-                    <td>{statusIcon(l.status)} {statusLabel(l.status)}</td>
-                    <td style={{fontWeight:500}}>{l.platform.replace(/_/g,' ')}</td>
-                    <td style={{color:'#888'}}>{tierNames[l.tier]||l.tier}</td>
-                    <td style={{textAlign:'center'}}>{napStatus == null ? <span style={{color:'#555'}}>{'\u2014'}</span> : napStatus ? <span style={{color:'#4ade80'}} title="NAP matches">{'\u2713'}</span> : <span style={{color:'#fbbf24'}} title={l.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}>{'\u26A0'}</span>}</td>
-                    <td>{l.is_claimed==null?'\u2014':l.is_claimed?'\u2713':'\u2717'}</td>
-                    <td>{l.cost_tier||'FREE'}</td>
-                    <td>
-                      {l.listing_url && <a href={l.listing_url} target="_blank" rel="noopener" style={{color:'#4ade80', marginRight: claimUrl ? '0.5rem' : 0}}>View</a>}
-                      {claimUrl && (l.status !== 'listed') && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#EA9320'}}>{l.status === 'needs_claim' ? 'Claim' : l.status === 'not_listed' ? 'Register' : 'Update'}</a>}
-                      {claimUrl && l.status === 'listed' && !l.listing_url && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#60a5fa'}}>Manage</a>}
-                      {!l.listing_url && !claimUrl && '\u2014'}
-                    </td>
-                  </tr>
-                );
+              {filtered.sort((a,b)=>a._sortKey-b._sortKey).map(r => {
+                if (r._kind === 'directory') {
+                  const claimUrl = getSubmitUrl(r);
+                  const hasNapIssues = r.nap_issues && r.nap_issues.length > 0;
+                  const napStatus = (r.status === 'not_listed') ? null : hasNapIssues ? false : true;
+                  return (
+                    <tr key={'d-'+r.id} style={{background:statusRowBg(r.status)}}>
+                      <td>{statusIcon(r.status)} {statusLabel(r.status)}</td>
+                      <td style={{fontWeight:500}}>{r._name}</td>
+                      <td style={{color:'#888', fontSize:'0.85rem'}}>{r._category}</td>
+                      <td>
+                        {napStatus == null ? '' : napStatus ? <span style={{color:'#4ade80', marginRight:'0.5rem'}} title="NAP matches">{'\u2713'} NAP</span> : <span style={{color:'#fbbf24', marginRight:'0.5rem'}} title={r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}>{'\u26A0'} NAP</span>}
+                        {r.is_claimed != null && (r.is_claimed ? <span style={{color:'#4ade80'}}>{'\u2713'} Claimed</span> : <span style={{color:'#f87171'}}>Unclaimed</span>)}
+                      </td>
+                      <td>{r.cost_tier||'FREE'}</td>
+                      <td>
+                        {r.listing_url && <a href={r.listing_url} target="_blank" rel="noopener" style={{color:'#4ade80', marginRight: claimUrl ? '0.5rem' : 0}}>View</a>}
+                        {claimUrl && (r.status !== 'listed') && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#EA9320'}}>{r.status === 'needs_claim' ? 'Claim' : r.status === 'not_listed' ? 'Register' : 'Update'}</a>}
+                        {claimUrl && r.status === 'listed' && !r.listing_url && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#60a5fa'}}>Manage</a>}
+                        {!r.listing_url && !claimUrl && '\u2014'}
+                      </td>
+                    </tr>
+                  );
+                } else {
+                  const color = typeColors[r.link_type] || '#888';
+                  return (
+                    <tr key={'l-'+r.id} style={{background: r.status==='done'?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
+                      <td style={{textTransform:'capitalize'}}>{r.status === 'done' ? <span style={{color:'#4ade80'}}>{'\u2713'}</span> : <span style={{color:'#f87171'}}>{'\u25CB'}</span>} {r.status || 'pending'}</td>
+                      <td style={{fontWeight:500}}>{r._name}</td>
+                      <td><span style={{color, fontSize:'0.85rem'}}>{typeIcons[r.link_type] || '\uD83D\uDD17'} {r._category}</span></td>
+                      <td><span className="pill" style={{background:r.priority<=2?'rgba(239,68,68,0.2)':r.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:r.priority<=2?'#f87171':r.priority<=5?'#fbbf24':'#60a5fa'}}>P{r.priority}</span></td>
+                      <td>{r.estimated_cost || 'Free'}</td>
+                      <td>{(r.target_url || r.target_page) ? <a href={r.target_url || r.target_page} target="_blank" rel="noopener noreferrer" style={{color:'#EA9320', textDecoration:'none'}}>{(r.target_url || r.target_page).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '').substring(0,40)}</a> : '\u2014'}</td>
+                    </tr>
+                  );
+                }
               })}
             </tbody>
           </table>
-
-          {/* ── Link Building Opportunities ── */}
-          {links && links.length > 0 && (() => {
-            // Deduplicate: remove link_checklist items already tracked in directory_listings
-            const dirNames = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
-            const deduped = links.filter(l => {
-              const title = (l.title || '').toLowerCase();
-              return !dirNames.some(name => {
-                const words = name.split(/\s+/).filter(w => w.length > 2 && !['business','legacy','the'].includes(w));
-                return words.length > 0 && words.every(w => title.includes(w));
-              });
-            });
-            if (deduped.length === 0) return null;
-
-            const typeColors = { authority: '#a78bfa', directory: '#60a5fa', sponsorship: '#4ade80', content: '#fbbf24', outreach: '#f97316' };
-            const typeIcons = { authority: '\uD83C\uDFDB', directory: '\uD83D\uDCD6', sponsorship: '\uD83E\uDD1D', content: '\u270D\uFE0F', outreach: '\uD83D\uDCE7' };
-            const linkTypes = [...new Set(deduped.map(l => l.link_type))];
-            const [activeLinkType, setActiveLinkType] = React.useState('all');
-            const shown = activeLinkType === 'all' ? deduped : deduped.filter(l => l.link_type === activeLinkType);
-            const done = deduped.filter(l => l.status === 'done').length;
-
-            return (
-              <div style={{marginTop:'2.5rem', paddingTop:'1.5rem', borderTop:'1px solid #333'}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
-                  <h3 style={{margin:0}}>Link Building Opportunities</h3>
-                  <span style={{color:'#888', fontSize:'0.85rem'}}>{done}/{deduped.length} complete</span>
-                </div>
-                <div style={{display:'flex', gap:'0.5rem', marginBottom:'1rem', flexWrap:'wrap'}}>
-                  {['all', ...linkTypes].map(t => (
-                    <button key={t} onClick={() => setActiveLinkType(t)} style={{
-                      padding:'0.3rem 0.75rem', borderRadius:'16px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
-                      background: activeLinkType === t ? (typeColors[t] || '#EA9320') : 'transparent',
-                      color: activeLinkType === t ? '#000' : '#aaa',
-                      border: '1px solid ' + (activeLinkType === t ? (typeColors[t] || '#EA9320') : '#333'),
-                      cursor:'pointer', fontWeight: activeLinkType === t ? 700 : 400, textTransform:'capitalize',
-                    }}>
-                      {t === 'all' ? `All (${deduped.length})` : `${(typeIcons[t]||'')} ${t.replace(/_/g,' ')} (${deduped.filter(l=>l.link_type===t).length})`}
-                    </button>
-                  ))}
-                </div>
-                <table>
-                  <thead><tr><th>Priority</th><th>Type</th><th>Title</th><th>Target</th><th>Cost</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {shown.sort((a,b)=>(a.priority||99)-(b.priority||99)).map(l => {
-                      const color = typeColors[l.link_type] || '#888';
-                      return (
-                        <tr key={l.id} style={{background: l.status==='done'?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
-                          <td><span className="pill" style={{background:l.priority<=2?'rgba(239,68,68,0.2)':l.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:l.priority<=2?'#f87171':l.priority<=5?'#fbbf24':'#60a5fa'}}>P{l.priority}</span></td>
-                          <td><span style={{color, fontSize:'0.85rem'}}>{typeIcons[l.link_type] || '\uD83D\uDD17'} {(l.link_type||'').replace(/_/g,' ')}</span></td>
-                          <td style={{fontWeight:500}}>{l.title}</td>
-                          <td style={{fontSize:'0.8rem'}}>{(l.target_url || l.target_page) ? <a href={l.target_url || l.target_page} target="_blank" rel="noopener noreferrer" style={{color:'#EA9320', textDecoration:'none'}}>{(l.target_url || l.target_page).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a> : '\u2014'}</td>
-                          <td>{l.estimated_cost || 'Free'}</td>
-                          <td style={{textTransform:'capitalize'}}>{l.status || 'pending'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })()}
         </div>
       );
     }
