@@ -2335,14 +2335,30 @@
       const typeIcons = { authority: '\uD83C\uDFDB', directory: '\uD83D\uDCD6', sponsorship: '\uD83E\uDD1D', content: '\u270D\uFE0F', outreach: '\uD83D\uDCE7' };
       const napIssueLabels = {'name_variation':'Name Mismatch','wrong_address':'Wrong Address','wrong_phone':'Wrong Phone','wrong_city':'Wrong City','old_address':'Old Address','wrong_category':'Wrong Category','dead_link_risk':'Dead Link Risk'};
 
-      // Deduplicate links against directory listings
-      const dirNames = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
+      // Deduplicate links against directory listings (aggressive matching)
+      const dirNamesNorm = (listings || []).map(l => l.platform.toLowerCase().replace(/[_()\-]/g, ' ').trim());
+      const dirPlatformKeys = (listings || []).map(l => l.platform.toLowerCase().replace(/[()]/g, '').replace(/[\s-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, ''));
       const dedupedLinks = (links || []).filter(l => {
-        const title = (l.title || '').toLowerCase();
-        return !dirNames.some(name => {
+        // Clean title: strip "Claim/update ... listing" wrapper
+        const rawTitle = (l.title || '').toLowerCase();
+        const cleanTitle = rawTitle.replace(/^claim\/update\s+/i, '').replace(/\s+listing$/i, '').trim();
+        // Check if cleaned title matches any directory platform name
+        const matchesDirName = dirNamesNorm.some(name => {
           const words = name.split(/\s+/).filter(w => w.length > 2 && !['business','legacy','the'].includes(w));
-          return words.length > 0 && words.every(w => title.includes(w));
+          return words.length > 0 && words.every(w => cleanTitle.includes(w));
         });
+        if (matchesDirName) return false;
+        // Check if target_url domain matches any known submitUrl for an existing directory platform
+        if (l.target_url) {
+          const urlDomain = l.target_url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*/, '');
+          const knownDomains = Object.values(submitUrls).map(u => u.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*/, ''));
+          const domainIdx = knownDomains.findIndex(d => urlDomain.includes(d) || d.includes(urlDomain));
+          if (domainIdx >= 0) {
+            const matchedKey = Object.keys(submitUrls)[domainIdx];
+            if (dirPlatformKeys.includes(matchedKey)) return false;
+          }
+        }
+        return true;
       });
 
       // Build unified rows
@@ -2426,7 +2442,7 @@
             </div>
             <select className="filter" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
               <option value="all">All Statuses</option>
-              {availableStatuses.map(s => <option key={s} value={s}>{s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
+              {availableStatuses.map(s => <option key={s} value={s}>{s === 'pending' ? 'To Do' : s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
             </select>
             <select className="filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}>
               <option value="all">{filterKind === 'link' ? 'All Types' : filterKind === 'directory' ? 'All Tiers' : 'All Categories'}</option>
@@ -2463,12 +2479,12 @@
                   const color = typeColors[r.link_type] || '#888';
                   return (
                     <tr key={'l-'+r.id} style={{background: r.status==='done'?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
-                      <td style={{textTransform:'capitalize'}}>{r.status === 'done' ? <span style={{color:'#4ade80'}}>{'\u2713'}</span> : <span style={{color:'#f87171'}}>{'\u25CB'}</span>} {r.status || 'pending'}</td>
+                      <td>{r.status === 'done' ? <span style={{color:'#4ade80'}}>{'\u2713'} Done</span> : <span style={{color:'#f87171'}}>{'\u25CB'} To Do</span>}</td>
                       <td style={{fontWeight:500}}>{r._name}</td>
                       <td><span style={{color, fontSize:'0.85rem'}}>{typeIcons[r.link_type] || '\uD83D\uDD17'} {r._category}</span></td>
                       <td><span className="pill" style={{background:r.priority<=2?'rgba(239,68,68,0.2)':r.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:r.priority<=2?'#f87171':r.priority<=5?'#fbbf24':'#60a5fa'}}>P{r.priority}</span></td>
                       <td>{r.estimated_cost || 'Free'}</td>
-                      <td>{(r.target_url || r.target_page) ? <a href={r.target_url || r.target_page} target="_blank" rel="noopener noreferrer" style={{color:'#EA9320', textDecoration:'none'}}>{(r.target_url || r.target_page).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '').substring(0,40)}</a> : '\u2014'}</td>
+                      <td>{(r.target_url || r.target_page) ? <a href={r.target_url || r.target_page} target="_blank" rel="noopener noreferrer" style={{color:'#EA9320'}}>Go</a> : '\u2014'}</td>
                     </tr>
                   );
                 }
