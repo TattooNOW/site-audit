@@ -1259,7 +1259,14 @@
       );
     }
 
-    function RankMapTab({ rankMaps, locationId, onRefresh, auditRunning, site }) {
+    function formatVolume(n) {
+      if (!n || n <= 0) return null;
+      if (n >= 1000000) return (n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'K';
+      return String(n);
+    }
+
+    function RankMapTab({ rankMaps, locationId, onRefresh, auditRunning, site, keywordSuggestions }) {
       if (!rankMaps || rankMaps.length === 0) {
         return (
           <div className="card" style={{textAlign:'center',padding:'3rem'}}>
@@ -1299,6 +1306,8 @@
             <span style={{color:'#666', fontSize:'0.75rem', textTransform:'uppercase', letterSpacing:'0.5px', marginRight:'0.25rem'}}>Keyword:</span>
             {keywords.map(kw => {
               const latest = rankMaps.find(r => r.keyword === kw);
+              const kwSug = (keywordSuggestions || []).find(s => s.keyword.toLowerCase() === kw.toLowerCase());
+              const vol = kwSug ? formatVolume(kwSug.search_volume) : null;
               return (
                 <button key={kw} onClick={() => setActiveKeyword(kw)} style={{
                   padding:'0.35rem 0.85rem', borderRadius:'20px', fontSize:'0.8rem', fontFamily:'Roboto, sans-serif',
@@ -1308,7 +1317,7 @@
                   cursor:'pointer', fontWeight: activeKeyword === kw ? 700 : 400,
                   transition:'all 0.15s',
                 }}>
-                  "{kw}" {latest && <span style={{opacity:0.7, marginLeft:'0.25rem', fontSize:'0.7rem'}}>{latest.top_3_pct}%</span>}
+                  "{kw}" {vol && <span style={{opacity:0.7, marginLeft:'0.25rem', fontSize:'0.7rem'}}>{vol}/mo</span>} {latest && <span style={{opacity:0.7, marginLeft:'0.15rem', fontSize:'0.7rem'}}>{latest.top_3_pct}%</span>}
                 </button>
               );
             })}
@@ -3119,6 +3128,7 @@
       const [linkChecklist, setLinkChecklist] = React.useState([]);
       const [billingRecords, setBillingRecords] = React.useState([]);
       const [usageLogs, setUsageLogs] = React.useState([]);
+      const [keywordSuggestions, setKeywordSuggestions] = React.useState([]);
       const [activeTab, setActiveTab] = React.useState('overview');
       const [auditRunning, setAuditRunning] = React.useState(false);
       const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -3167,6 +3177,7 @@
               db.from('directory_listings').select('*').eq('site_id', siteData.id),
               db.from('audit_billing').select('*').eq('site_id', siteData.id).order('audit_date', {ascending:false}),
               db.from('apify_usage_log').select('*').eq('site_id', siteData.id).order('created_at', {ascending:false}),
+              db.from('keyword_suggestions').select('keyword,search_volume').eq('site_id', siteData.id).order('search_volume', {ascending:false}),
             ];
 
             const results = await Promise.allSettled(queries);
@@ -3183,6 +3194,7 @@
             setDirectoryListings(safe(results[7]));
             setBillingRecords(safe(results[8]));
             setUsageLogs(safe(results[9]));
+            setKeywordSuggestions(safe(results[10]));
           } catch (e) {
             console.error('Dashboard load error:', e);
             if (!canceled) setError(e);
@@ -3348,7 +3360,7 @@
 
           {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} locationId={locationId} site={site} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} auditRunning={auditRunning} onOpenAdmin={openAdmin} />}
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} />}
-          {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} site={site} />}
+          {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} site={site} keywordSuggestions={keywordSuggestions} />}
           {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
           {activeTab === 'insights' && <InsightsTab latestFindings={latestFindings} latestGeo={latestGeo} aiMentions={aiMentions} businessName={site.business_name} locationId={locationId} onRefresh={refreshSection} auditRunning={auditRunning} />}
           {activeTab === 'directories' && <DirectoryTab listings={directoryListings} site={site} locationId={locationId} onRefresh={() => refreshSection('directories')} links={linkChecklist} auditRunning={auditRunning} />}
