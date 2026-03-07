@@ -101,9 +101,9 @@
       if (r <= 3) return 'rgba(74,222,128,0.15)'; if (r <= 7) return 'rgba(163,230,53,0.12)';
       if (r <= 10) return 'rgba(251,191,36,0.12)'; if (r <= 15) return 'rgba(249,115,22,0.12)'; return 'rgba(248,113,113,0.12)';
     };
-    const statusIcon = s => s === 'listed' ? '\u2705' : (s === 'needs_fix' || s === 'needs_claim') ? '\u26A0\uFE0F' : '\u274C';
-    const statusLabel = s => ({ listed:'Listed', needs_fix:'Needs Fix', needs_claim:'Needs Claim', not_listed:'Not Listed' }[s] || s);
-    const statusRowBg = s => ({ listed:'rgba(74,222,128,0.08)', needs_fix:'rgba(251,191,36,0.08)', needs_claim:'rgba(251,191,36,0.08)', not_listed:'rgba(248,113,113,0.08)' }[s] || 'transparent');
+    const statusIcon = s => s === 'listed' || s === 'done' ? '\u2705' : (s === 'needs_fix' || s === 'needs_claim') ? '\u26A0\uFE0F' : s === 'pending' ? '\u25CB' : '\u274C';
+    const statusLabel = s => ({ listed:'Listed', needs_fix:'Needs Fix', needs_claim:'Needs Claim', not_listed:'Not Listed', pending:'To Do', done:'Done' }[s] || s);
+    const statusRowBg = s => ({ listed:'rgba(74,222,128,0.08)', needs_fix:'rgba(251,191,36,0.08)', needs_claim:'rgba(251,191,36,0.08)', not_listed:'rgba(248,113,113,0.08)', pending:'rgba(248,113,113,0.08)', done:'rgba(74,222,128,0.06)' }[s] || 'transparent');
     const priorityColor = p => ({ P0:'#ef4444', P1:'#fbbf24', P2:'#60a5fa' }[p] || '#888');
 
     /* ── Component: Run Audit Button ─────────────────────── */
@@ -1620,13 +1620,8 @@
                   </td>
                   <td style={{fontSize:'0.85rem', color: s.found ? '#ccc' : '#f9a8a8', maxWidth:'500px'}}>
                     {s.found ? (() => {
-                      // Use matched_content from workflow, or fall back to site data for known sections
+                      // Use matched_content from workflow (actual HTML content detected)
                       let content = s.matched_content && s.matched_content.length > 0 ? s.matched_content : null;
-                      if (!content && site) {
-                        if (/^services$/i.test(s.name) && site.detected_services && site.detected_services.length > 0) {
-                          content = site.detected_services.slice(0, 20);
-                        }
-                      }
                       if (content && content.length > 0) {
                         const cleanNotes = s.notes && !/Found element with (class|id)/.test(s.notes) ? s.notes : null;
                         return <div>
@@ -1636,9 +1631,6 @@
                                 {item}
                               </span>
                             ))}
-                            {!s.matched_content && site && site.detected_services && site.detected_services.length > 20 && (
-                              <span style={{color:'#888', fontSize:'0.75rem'}}>+{site.detected_services.length - 20} more</span>
-                            )}
                           </div>
                           {cleanNotes && <div style={{color:'#888', fontSize:'0.8rem'}}>{cleanNotes}</div>}
                         </div>;
@@ -2195,14 +2187,20 @@
         return { ...c, intel };
       });
       const clientRow = all.find(c => c.intel.is_client);
-      const compRows = all.filter(c => !c.intel.is_client).sort((a, b) => {
-        // Sort by: rank map top3 pct descending, then AI mentions, then above_client
-        const aMap = a.intel.rank_map_top3_pct || 0, bMap = b.intel.rank_map_top3_pct || 0;
-        if (bMap !== aMap) return bMap - aMap;
-        const am = a.intel.ai_mentions || 0, bm = b.intel.ai_mentions || 0;
-        if (bm !== am) return bm - am;
-        return (b.intel.above_client || 0) - (a.intel.above_client || 0);
-      });
+      // Composite threat score: weighted sum of all signals
+      const threatScore = (c) => {
+        const i = c.intel;
+        let score = 0;
+        score += (i.rank_map_top3_pct || 0) * 1.5;        // Map visibility (0-150)
+        score += (i.above_client || 0) * 25;               // Outranking in AI (0-125)
+        score += (i.ai_mentions || 0) * 10;                // AI visibility (0-50+)
+        score += Math.min((i.google_reviews || c.review_count || 0) / 10, 30); // Reviews (0-30)
+        score += (i.google_rating || c.review_rating || 0) * 5; // Rating (0-25)
+        score += Math.min((i.instagram_followers || 0) / 1000, 20); // IG presence (0-20)
+        score += Math.min((i.facebook_followers || 0) / 1000, 15); // FB presence (0-15)
+        return Math.round(score);
+      };
+      const compRows = all.filter(c => !c.intel.is_client).map(c => ({...c, _threat: threatScore(c)})).sort((a, b) => b._threat - a._threat);
 
       const aboveCount = compRows.filter(c => (c.intel.above_client || 0) > 0).length;
       const mapCount = compRows.filter(c => c.intel.from_rank_map).length;
@@ -2245,6 +2243,7 @@
           <table>
             <thead><tr>
               <th>#</th>
+              <th>Threat</th>
               <th>Business</th>
               <th>Website</th>
               <th>Social Media</th>
@@ -2258,6 +2257,7 @@
               {clientRow && (
                 <tr style={{background:'rgba(234,147,32,0.12)', borderLeft:'3px solid #EA9320'}}>
                   <td style={{color:'#EA9320', fontWeight:700, fontSize:'0.9rem'}}>{'\u2605'}</td>
+                  <td style={{textAlign:'center'}}>{'\u2014'}</td>
                   <td style={{fontWeight:700, color:'#EA9320'}}>{clientRow.competitor_name}<div style={{fontSize:'0.7rem',color:'#888'}}>YOUR BUSINESS</div></td>
                   <td>{clientRow.domain ? <a href={'https://'+clientRow.domain} target="_blank" rel="noopener" style={{color:'#EA9320', fontSize:'0.85rem'}}>{clientRow.domain}</a> : '\u2014'}</td>
                   <td style={{fontSize:'0.8rem'}}><SocialCell intel={clientRow.intel} /></td>
@@ -2275,6 +2275,7 @@
                 return (
                   <tr key={c.id} style={{background: bgColor}}>
                     <td style={{color:'#888', fontSize:'0.8rem'}}>{idx + 1}</td>
+                    <td style={{textAlign:'center'}}><span style={{fontSize:'0.8rem', fontWeight:600, color: c._threat >= 100 ? '#f87171' : c._threat >= 50 ? '#fbbf24' : '#4ade80'}}>{c._threat}</span></td>
                     <td style={{fontWeight:500}}>{c.competitor_name}</td>
                     <td>{c.domain ? <a href={'https://'+c.domain} target="_blank" rel="noopener" style={{color:'#EA9320', fontSize:'0.85rem'}}>{c.domain}</a> : <span style={{color:'#555'}}>not found</span>}</td>
                     <td style={{fontSize:'0.8rem'}}><SocialCell intel={c.intel} /></td>
@@ -2343,6 +2344,8 @@
         'showmelocal': 'https://www.showmelocal.com',
         'dexknows': 'https://www.dexknows.com',
         'cylex': 'https://www.cylex.us.com/add-your-business.html',
+        'alliance_of_professional_tattooists_apt': 'https://www.safe-tattoos.com/membership',
+        'apt': 'https://www.safe-tattoos.com/membership',
       };
 
       function getSubmitUrl(l) {
@@ -2481,15 +2484,15 @@
                   return (
                     <tr key={'d-'+r.id} style={{background:statusRowBg(r.status)}}>
                       <td>{statusIcon(r.status)} {statusLabel(r.status)}</td>
-                      <td style={{fontWeight:500}}>{r._name}</td>
+                      <td style={{fontWeight:500}}>{r._name}{hasNapIssues && <span style={{color:'#fbbf24', marginLeft:'0.4rem', fontSize:'0.75rem'}} title={r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}>{'\u26A0'}</span>}</td>
                       <td style={{color:'#888', fontSize:'0.85rem'}}>{r._category}</td>
                       <td>
-                        {napStatus == null ? '' : napStatus ? <span style={{color:'#4ade80', marginRight:'0.5rem'}} title="NAP matches">{'\u2713'} NAP</span> : <span style={{color:'#fbbf24', marginRight:'0.5rem'}} title={r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}>{'\u26A0'} NAP</span>}
-                        {r.is_claimed != null && (r.is_claimed ? <span style={{color:'#4ade80'}}>{'\u2713'} Claimed</span> : <span style={{color:'#f87171'}}>Unclaimed</span>)}
+                        {napStatus == null ? '' : napStatus ? <span style={{color:'#4ade80'}} title="NAP matches">{'\u2713'} NAP</span> : <span style={{color:'#fbbf24'}} title={r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}>{'\u26A0'} {r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ')}</span>}
+                        {r.is_claimed != null && <span style={{marginLeft: napStatus != null ? '0.5rem' : 0}}>{r.is_claimed ? <span style={{color:'#4ade80'}}>{'\u2713'} Claimed</span> : <span style={{color:'#f87171'}}>Unclaimed</span>}</span>}
                       </td>
                       <td>{r.cost_tier||'FREE'}</td>
                       <td>
-                        {r.listing_url && <a href={r.listing_url} target="_blank" rel="noopener" style={{color:'#4ade80', marginRight: claimUrl ? '0.5rem' : 0}}>View</a>}
+                        {r.listing_url && <a href={r.listing_url} target="_blank" rel="noopener" title={hasNapIssues ? 'NAP Issues: ' + r.nap_issues.map(i=>napIssueLabels[i]||i).join(', ') : 'View listing'} style={{color: hasNapIssues ? '#fbbf24' : '#4ade80', marginRight: claimUrl ? '0.5rem' : 0}}>View</a>}
                         {claimUrl && (r.status !== 'listed') && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#EA9320'}}>{r.status === 'needs_claim' ? 'Claim' : r.status === 'not_listed' ? 'Register' : 'Update'}</a>}
                         {claimUrl && r.status === 'listed' && !r.listing_url && <a href={claimUrl} target="_blank" rel="noopener" style={{color:'#60a5fa'}}>Manage</a>}
                         {!r.listing_url && !claimUrl && '\u2014'}
@@ -2499,8 +2502,8 @@
                 } else {
                   const color = typeColors[r.link_type] || '#888';
                   return (
-                    <tr key={'l-'+r.id} style={{background: r.status==='done'?'rgba(74,222,128,0.06)':'rgba(248,113,113,0.08)'}}>
-                      <td>{r.status === 'done' ? <span style={{color:'#4ade80'}}>{'\u2713'} Done</span> : <span style={{color:'#f87171'}}>{'\u25CB'} To Do</span>}</td>
+                    <tr key={'l-'+r.id} style={{background: statusRowBg(r._status)}}>
+                      <td>{statusIcon(r._status)} {statusLabel(r._status)}</td>
                       <td style={{fontWeight:500}}>{r._name}</td>
                       <td><span style={{color, fontSize:'0.85rem'}}>{typeIcons[r.link_type] || '\uD83D\uDD17'} {r._category}</span></td>
                       <td><span className="pill" style={{background:r.priority<=2?'rgba(239,68,68,0.2)':r.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:r.priority<=2?'#f87171':r.priority<=5?'#fbbf24':'#60a5fa'}}>P{r.priority}</span></td>
