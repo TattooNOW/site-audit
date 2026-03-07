@@ -1020,9 +1020,10 @@
 
     // Normalize grid_data: handles both flat int[] and object[] formats from DataForSEO
     // Returns { ranks: int[], coords: [{lat,lng,top_results}] }
-    function normalizeGridData(rm, siteDomain) {
+    function normalizeGridData(rm, siteDomain, bizName) {
       const raw = rm.grid_data || [];
       const domain = (siteDomain || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*/, '').toLowerCase();
+      const bizWord = (bizName || '').toLowerCase().split(' ')[0];
 
       // Already flat int array (legacy / correct format)
       if (raw.length === 0 || typeof raw[0] === 'number' || raw[0] === null) {
@@ -1030,7 +1031,7 @@
         return { ranks: raw, coords };
       }
 
-      // Object array: {lat, lng, top_results} — extract client rank from each point
+      // Object array: {lat, lng, rank?, top_results} — extract client rank from each point
       const ranks = [];
       const coords = raw.map(pt => {
         const topResults = (pt.top_results || []).map(r => ({
@@ -1040,12 +1041,21 @@
           rating: typeof r.rating === 'object' ? r.rating?.value : r.rating,
           reviews: typeof r.rating === 'object' ? r.rating?.votes_count : r.reviews,
         }));
-        // Find client rank by domain match
-        let clientRank = null;
-        for (const r of topResults) {
-          if (domain && r.domain && r.domain.toLowerCase().includes(domain)) {
-            clientRank = r.rank;
-            break;
+        // Use pre-computed rank if available (section-refresh workflow sets this)
+        let clientRank = pt.rank != null ? pt.rank : null;
+        // Otherwise try domain match then business name match
+        if (clientRank === null) {
+          for (const r of topResults) {
+            if (domain && r.domain && r.domain.toLowerCase().includes(domain)) {
+              clientRank = r.rank; break;
+            }
+          }
+        }
+        if (clientRank === null && bizWord) {
+          for (const r of topResults) {
+            if (r.title && r.title.toLowerCase().includes(bizWord)) {
+              clientRank = r.rank; break;
+            }
           }
         }
         ranks.push(clientRank);
@@ -1268,7 +1278,7 @@
       // Reset scan index when keyword changes
       React.useEffect(() => { setScanIdx(0); }, [activeKeyword]);
 
-      const normalized = normalizeGridData(rm, site?.domain);
+      const normalized = normalizeGridData(rm, site?.domain, site?.business_name);
       const grid = normalized.ranks;
       const gridCoords = normalized.coords;
       const sizeRaw = rm.grid_size || '';
