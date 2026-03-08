@@ -826,7 +826,7 @@
     }
 
     /* ── Tab: Overview ───────────────────────────────────── */
-    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, homepageSections, apifyResults, locationId, site, lastAuditDate, onAuditStarted, auditRunning, onOpenAdmin }) {
+    function OverviewTab({ scores, delta, chartData, quickWins, rankMap, core30, core30Plan, homepageSections, apifyResults, locationId, site, lastAuditDate, onAuditStarted, auditRunning, onOpenAdmin }) {
       const seo = scores.seo?.score ?? '\u2014';
       const ai = scores.ai_discoverability?.score ?? '\u2014';
       const geo = scores.geo_readiness?.score ?? '\u2014';
@@ -884,32 +884,33 @@
           </section>
 
           {/* Core 30 Coverage Bar */}
-          {core30 && (
-            <section className="card" style={{marginBottom:'2rem'}}>
-              <h3 style={{marginTop:0}}>Core 30 Coverage</h3>
-              <div style={{display:'flex', gap:'2rem', flexWrap:'wrap'}}>
-                <div style={{flex:1, minWidth:'200px'}}>
-                  <div style={{fontSize:'0.85rem', color:'#888', marginBottom:'0.5rem'}}>Categories ({core30.categories_found || 0}/{core30.categories_total || 0})</div>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{width: `${core30.categories_total ? Math.round((core30.categories_found||0)/(core30.categories_total)*100) : 0}%`, background:'#4ade80'}} />
+          {(() => {
+            const useNew = core30Plan && core30Plan.length > 0;
+            const services = useNew ? core30Plan.filter(i => i.entity_type === 'service') : null;
+            const svcTotal = useNew ? services.length : (core30?.services_total || 0);
+            const svcFound = useNew ? services.filter(i => i.status === 'has_page').length : (core30?.services_found || 0);
+            const svcGaps = useNew ? services.filter(i => i.status === 'gap').length : (core30?.services_missing || 0);
+            const svcPct = svcTotal ? Math.round(svcFound/svcTotal*100) : 0;
+            if (!useNew && !core30) return null;
+            return (
+              <section className="card" style={{marginBottom:'2rem'}}>
+                <h3 style={{marginTop:0}}>Core 30 Coverage</h3>
+                <div style={{display:'flex', gap:'2rem', flexWrap:'wrap'}}>
+                  <div style={{flex:1, minWidth:'200px'}}>
+                    <div style={{fontSize:'0.85rem', color:'#888', marginBottom:'0.5rem'}}>Service Pages ({svcFound}/{svcTotal})</div>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{width: svcPct+'%', background: svcPct >= 50 ? '#4ade80' : svcPct >= 25 ? '#fbbf24' : '#f87171'}} />
+                    </div>
                   </div>
                 </div>
-                <div style={{flex:1, minWidth:'200px'}}>
-                  <div style={{fontSize:'0.85rem', color:'#888', marginBottom:'0.5rem'}}>Services ({core30.services_found || 0}/{core30.services_total || 0})</div>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{width: `${core30.services_total ? Math.round((core30.services_found||0)/(core30.services_total)*100) : 0}%`, background:'#60a5fa'}} />
+                {svcGaps > 0 && (
+                  <div style={{marginTop:'0.75rem', fontSize:'0.85rem', color:'#f87171'}}>
+                    {svcGaps} service{svcGaps>1?'s':''} without dedicated pages
                   </div>
-                </div>
-              </div>
-              {(core30.categories_missing > 0 || core30.services_missing > 0) && (
-                <div style={{marginTop:'0.75rem', fontSize:'0.85rem', color:'#f87171'}}>
-                  {core30.categories_missing > 0 && `${core30.categories_missing} category page${core30.categories_missing>1?'s':''} missing`}
-                  {core30.categories_missing > 0 && core30.services_missing > 0 && ' \u2022 '}
-                  {core30.services_missing > 0 && `${core30.services_missing} service page${core30.services_missing>1?'s':''} missing`}
-                </div>
-              )}
-            </section>
-          )}
+                )}
+              </section>
+            );
+          })()}
 
           {/* Homepage Coverage */}
           {homepageSections && (
@@ -1487,57 +1488,139 @@
     }
 
     /* ── Tab: Core 30 ────────────────────────────────────── */
-    function Core30Tab({ core30, contentBriefs }) {
-      if (!core30) {
-        return <p style={{color:'#888'}}>No Core 30 analysis data. Run a full audit first.</p>;
+    function Core30Tab({ crawledPages, core30Plan, site, locationId, onRefresh, auditRunning }) {
+      const [spiderRunning, setSpiderRunning] = React.useState(false);
+      const [viewMode, setViewMode] = React.useState('plan'); // 'plan' | 'pages'
+      const [filterStatus, setFilterStatus] = React.useState('all');
+
+      const hasData = core30Plan.length > 0 || crawledPages.length > 0;
+
+      const gaps = core30Plan.filter(i => i.status === 'gap');
+      const hasPage = core30Plan.filter(i => i.status === 'has_page');
+      const needsImprove = core30Plan.filter(i => i.status === 'needs_improvement');
+      const totalServices = core30Plan.filter(i => i.entity_type === 'service').length;
+
+      const pageTypes = {};
+      crawledPages.forEach(p => { pageTypes[p.page_type] = (pageTypes[p.page_type] || 0) + 1; });
+
+      const statusColor = s => ({ gap:'#f87171', has_page:'#4ade80', needs_improvement:'#fbbf24', draft_ready:'#60a5fa', published:'#818cf8' }[s] || '#888');
+      const statusLabel = s => ({ gap:'Gap', has_page:'Has Page', needs_improvement:'Needs Work', draft_ready:'Draft Ready', published:'Published' }[s] || s);
+
+      const runSpider = async () => {
+        setSpiderRunning(true);
+        try {
+          await fetch('https://tn.reinventingai.com/webhook/core30-spider', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: site.domain, siteId: site.id, locationId }),
+          });
+          // Poll for completion
+          const poll = setInterval(async () => {
+            const { data } = await db.from('crawled_pages').select('id').eq('site_id', site.id).limit(1);
+            if (data && data.length > 0) {
+              clearInterval(poll);
+              setSpiderRunning(false);
+              if (onRefresh) onRefresh();
+            }
+          }, 5000);
+          setTimeout(() => { clearInterval(poll); setSpiderRunning(false); }, 120000);
+        } catch(e) { setSpiderRunning(false); }
+      };
+
+      if (!hasData) {
+        return (
+          <div style={{textAlign:'center', padding:'3rem 1rem'}}>
+            <div style={{fontSize:'3rem', marginBottom:'1rem'}}>&#x1F578;&#xFE0F;</div>
+            <h3 style={{margin:'0 0 0.5rem 0'}}>No Site Crawl Data Yet</h3>
+            <p style={{color:'#888', margin:'0 0 1.5rem 0'}}>Run the spider to crawl your site, map pages to GBP services, and identify content gaps.</p>
+            <button onClick={runSpider} disabled={spiderRunning || auditRunning} style={{
+              background:'#EA9320', color:'#000', border:'none', borderRadius:'8px',
+              padding:'0.75rem 2rem', fontSize:'1rem', fontWeight:700, cursor:'pointer',
+              opacity: spiderRunning ? 0.6 : 1,
+            }}>{spiderRunning ? 'Crawling...' : 'Crawl Site'}</button>
+          </div>
+        );
       }
 
-      const catPct = core30.categories_total ? Math.round((core30.categories_found||0)/core30.categories_total*100) : 0;
-      const svcPct = core30.services_total ? Math.round((core30.services_found||0)/core30.services_total*100) : 0;
+      const filtered = filterStatus === 'all' ? core30Plan : core30Plan.filter(i => i.status === filterStatus);
 
       return (
         <div>
+          {/* Score Cards */}
           <section style={{display:'flex', gap:'0.75rem', marginBottom:'1rem', flexWrap:'wrap'}}>
             <div className="score-card" style={{borderTop:'2px solid #4ade80'}}>
-              <h3>Category Pages <SourceInfo text={"Internal link crawler\nCrawls <a> tags from homepage, compares against checklist of 30 recommended pages"} /></h3>
-              <div className="value">{core30.categories_found || 0}<span style={{fontSize:'1rem', color:'#888'}}>/{core30.categories_total || 0}</span></div>
-              <div style={{color:'#888', fontSize:'0.85rem'}}>{catPct}% coverage</div>
+              <h3>Pages Crawled <SourceInfo text={"Site Spider\nCrawls sitemap.xml + homepage links, extracts title, H1, H2s, schema, word count, and maps to GBP services"} /></h3>
+              <div className="value">{crawledPages.length}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{Object.entries(pageTypes).map(([t,c]) => `${c} ${t}`).join(', ')}</div>
             </div>
             <div className="score-card" style={{borderTop:'2px solid #60a5fa'}}>
-              <h3>Service Pages</h3>
-              <div className="value">{core30.services_found || 0}<span style={{fontSize:'1rem', color:'#888'}}>/{core30.services_total || 0}</span></div>
-              <div style={{color:'#888', fontSize:'0.85rem'}}>{svcPct}% coverage</div>
+              <h3>GBP Services Mapped</h3>
+              <div className="value">{hasPage.length}<span style={{fontSize:'1rem', color:'#888'}}>/{totalServices}</span></div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>{totalServices ? Math.round(hasPage.length/totalServices*100) : 0}% have dedicated pages</div>
             </div>
             <div className="score-card" style={{borderTop:'2px solid #f87171'}}>
-              <h3>Missing</h3>
-              <div className="value" style={{color:'#f87171'}}>{(core30.categories_missing||0) + (core30.services_missing||0)}</div>
-              <div style={{color:'#888', fontSize:'0.85rem'}}>pages to create</div>
+              <h3>Content Gaps</h3>
+              <div className="value" style={{color:'#f87171'}}>{gaps.length}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>services without pages</div>
             </div>
             <div className="score-card" style={{borderTop:'2px solid #fbbf24'}}>
-              <h3>Content Briefs</h3>
-              <div className="value">{(contentBriefs||[]).length}</div>
-              <div style={{color:'#888', fontSize:'0.85rem'}}>ready to write</div>
+              <h3>Needs Improvement</h3>
+              <div className="value" style={{color:'#fbbf24'}}>{needsImprove.length}</div>
+              <div style={{color:'#888', fontSize:'0.85rem'}}>mentioned but no dedicated page</div>
             </div>
           </section>
 
-          {/* Content Briefs Table */}
-          {(contentBriefs||[]).length > 0 && (
+          {/* Controls */}
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem', flexWrap:'wrap', gap:'0.5rem'}}>
+            <div style={{display:'flex', gap:'0.25rem'}}>
+              {['plan','pages'].map(m => (
+                <button key={m} onClick={() => setViewMode(m)} style={{
+                  background: viewMode===m ? '#EA9320' : '#1a1a2e', color: viewMode===m ? '#000' : '#888',
+                  border:'1px solid ' + (viewMode===m ? '#EA9320' : '#333'), borderRadius:'6px',
+                  padding:'0.4rem 0.8rem', fontSize:'0.8rem', fontWeight:600, cursor:'pointer',
+                }}>{m === 'plan' ? 'Service Plan' : 'Crawled Pages'}</button>
+              ))}
+            </div>
+            <div style={{display:'flex', gap:'0.5rem', alignItems:'center'}}>
+              {viewMode === 'plan' && (
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{
+                  background:'#1a1a2e', color:'#ccc', border:'1px solid #333', borderRadius:'6px',
+                  padding:'0.4rem 0.6rem', fontSize:'0.8rem',
+                }}>
+                  <option value="all">All ({core30Plan.length})</option>
+                  <option value="gap">Gaps ({gaps.length})</option>
+                  <option value="needs_improvement">Needs Work ({needsImprove.length})</option>
+                  <option value="has_page">Has Page ({hasPage.length})</option>
+                </select>
+              )}
+              <button onClick={spiderRunning ? undefined : runSpider} disabled={spiderRunning || auditRunning} style={{
+                background:'none', border:'1px solid #333', borderRadius:'6px',
+                padding:'0.4rem 0.8rem', color: spiderRunning ? '#666' : '#EA9320',
+                fontSize:'0.8rem', cursor: spiderRunning ? 'default' : 'pointer', fontWeight:600,
+              }}>{spiderRunning ? 'Crawling...' : 'Re-crawl'}</button>
+            </div>
+          </div>
+
+          {/* Service Plan View */}
+          {viewMode === 'plan' && (
             <section>
-              <h3>Content Pipeline</h3>
               <table>
                 <thead>
-                  <tr><th>Priority</th><th>Action</th><th>Keyword</th><th>Type</th><th>Target Words</th><th>Phase</th><th>Must Include</th></tr>
+                  <tr><th>Status</th><th>Service / Entity</th><th>Type</th><th>Existing Page</th><th>Priority</th></tr>
                 </thead>
                 <tbody>
-                  {contentBriefs.sort((a,b) => (a.priority||99)-(b.priority||99)).map((b,i) => (
-                    <tr key={i} style={{background: b.priority<=2?'rgba(248,113,113,0.06)':b.priority<=5?'rgba(251,191,36,0.05)':'rgba(96,165,250,0.04)'}}>
-                      <td><span className="pill" style={{background: b.priority<=2?'rgba(239,68,68,0.2)':b.priority<=5?'rgba(251,191,36,0.2)':'rgba(96,165,250,0.2)', color:b.priority<=2?'#f87171':b.priority<=5?'#fbbf24':'#60a5fa'}}>P{b.priority}</span></td>
-                      <td style={{textTransform:'capitalize'}}>{b.action}</td>
-                      <td style={{fontWeight:500}}>{b.target_keyword}</td>
-                      <td>{b.page_type}</td>
-                      <td>{b.target_word_count}+</td>
-                      <td>{b.phase}</td>
-                      <td style={{fontSize:'0.8rem', color:'#aaa', maxWidth:'250px'}}>{(b.must_include||[]).join(', ')}</td>
+                  {filtered.map((item, i) => (
+                    <tr key={i} style={{background: item.status==='gap'?'rgba(248,113,113,0.06)':item.status==='needs_improvement'?'rgba(251,191,36,0.05)':item.status==='has_page'?'rgba(74,222,128,0.06)':'transparent'}}>
+                      <td><span className="pill" style={{background: statusColor(item.status)+'33', color: statusColor(item.status)}}>{statusLabel(item.status)}</span></td>
+                      <td style={{fontWeight:500}}>{item.entity_name}</td>
+                      <td style={{fontSize:'0.8rem', color:'#888', textTransform:'capitalize'}}>{item.entity_type.replace('_',' ')}</td>
+                      <td style={{fontSize:'0.8rem'}}>
+                        {item.existing_url ? (
+                          <a href={item.existing_url} target="_blank" style={{color:'#60a5fa'}}>{item.existing_url.replace(/^https?:\/\/[^\/]+/, '')}</a>
+                        ) : item.draft_slug ? (
+                          <span style={{color:'#555', fontStyle:'italic'}}>{item.draft_slug}</span>
+                        ) : '—'}
+                      </td>
+                      <td><span className="pill" style={{background: item.priority<=10?'rgba(239,68,68,0.2)':item.priority<=30?'rgba(251,191,36,0.2)':'rgba(74,222,128,0.15)', color: item.priority<=10?'#f87171':item.priority<=30?'#fbbf24':'#4ade80'}}>P{item.priority}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1545,12 +1628,33 @@
             </section>
           )}
 
-          {core30.notes && core30.notes.length > 0 && (
-            <section className="card" style={{marginTop:'1.5rem'}}>
-              <h4 style={{marginTop:0}}>Notes</h4>
-              <ul style={{color:'#aaa', margin:0, paddingLeft:'1.2rem'}}>
-                {core30.notes.map((n,i) => <li key={i}>{n}</li>)}
-              </ul>
+          {/* Crawled Pages View */}
+          {viewMode === 'pages' && (
+            <section>
+              <table>
+                <thead>
+                  <tr><th>Page</th><th>Type</th><th>Title / H1</th><th>Mapped Service</th><th>Schema</th><th>Words</th><th>Links In</th></tr>
+                </thead>
+                <tbody>
+                  {crawledPages.map((p, i) => (
+                    <tr key={i} style={{background: p.mapped_service ? 'rgba(74,222,128,0.04)' : 'transparent'}}>
+                      <td style={{fontSize:'0.8rem', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                        <a href={p.url} target="_blank" style={{color:'#60a5fa'}}>{p.path || '/'}</a>
+                      </td>
+                      <td><span className="pill" style={{background:'rgba(96,165,250,0.15)', color:'#60a5fa', textTransform:'capitalize'}}>{p.page_type}</span></td>
+                      <td style={{fontSize:'0.8rem', maxWidth:'250px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                        <span style={{fontWeight:500}}>{p.h1 || p.title || '—'}</span>
+                      </td>
+                      <td style={{fontSize:'0.8rem', color: p.mapped_service ? '#4ade80' : '#555'}}>
+                        {p.mapped_service || '—'}
+                      </td>
+                      <td style={{textAlign:'center'}}>{p.has_schema ? '\u2705' : '\u274C'}</td>
+                      <td style={{textAlign:'right', color:'#888', fontSize:'0.8rem'}}>{(p.word_count||0).toLocaleString()}</td>
+                      <td style={{textAlign:'center', color:'#888', fontSize:'0.8rem'}}>{p.internal_links_in || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
           )}
         </div>
@@ -3144,6 +3248,8 @@
       const [billingRecords, setBillingRecords] = React.useState([]);
       const [usageLogs, setUsageLogs] = React.useState([]);
       const [keywordSuggestions, setKeywordSuggestions] = React.useState([]);
+      const [crawledPages, setCrawledPages] = React.useState([]);
+      const [core30Plan, setCore30Plan] = React.useState([]);
       const [activeTab, setActiveTab] = React.useState('overview');
       const [auditRunning, setAuditRunning] = React.useState(false);
       const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -3193,6 +3299,8 @@
               db.from('audit_billing').select('*').eq('site_id', siteData.id).order('audit_date', {ascending:false}),
               db.from('apify_usage_log').select('*').eq('site_id', siteData.id).order('created_at', {ascending:false}),
               db.from('keyword_suggestions').select('keyword,search_volume').eq('site_id', siteData.id).order('search_volume', {ascending:false}),
+              db.from('crawled_pages').select('*').eq('site_id', siteData.id).order('page_type'),
+              db.from('core30_plan').select('*').eq('site_id', siteData.id).order('priority'),
             ];
 
             const results = await Promise.allSettled(queries);
@@ -3210,6 +3318,8 @@
             setBillingRecords(safe(results[8]));
             setUsageLogs(safe(results[9]));
             setKeywordSuggestions(safe(results[10]));
+            setCrawledPages(safe(results[11]));
+            setCore30Plan(safe(results[12]));
           } catch (e) {
             console.error('Dashboard load error:', e);
             if (!canceled) setError(e);
@@ -3227,7 +3337,7 @@
         if (!site) return;
         const id = site.id;
         try {
-          const [a, f, g, ai, rm, comp, lc, dl, br, ul, s] = await Promise.allSettled([
+          const [a, f, g, ai, rm, comp, lc, dl, br, ul, s, cp, c30] = await Promise.allSettled([
             db.from('audits').select('*').eq('site_id', id).order('audit_date', {ascending:true}),
             db.from('findings').select('*').eq('site_id', id),
             db.from('geo_signals').select('*').eq('site_id', id),
@@ -3239,6 +3349,8 @@
             db.from('audit_billing').select('*').eq('site_id', id).order('audit_date', {ascending:false}),
             db.from('apify_usage_log').select('*').eq('site_id', id).order('created_at', {ascending:false}),
             db.from('sites').select('*').eq('id', id).maybeSingle(),
+            db.from('crawled_pages').select('*').eq('site_id', id).order('page_type'),
+            db.from('core30_plan').select('*').eq('site_id', id).order('priority'),
           ]);
           const safe = (r) => r.status === 'fulfilled' && !r.value.error ? r.value.data || [] : [];
           setAudits(safe(a));
@@ -3252,6 +3364,8 @@
           setBillingRecords(safe(br));
           setUsageLogs(safe(ul));
           if (s.status === 'fulfilled' && s.value.data) setSite(s.value.data);
+          setCrawledPages(safe(cp));
+          setCore30Plan(safe(c30));
           setAuditRunning(false);
         } catch (e) { console.error('refreshAll error:', e); }
       }, [site]);
@@ -3268,6 +3382,14 @@
           geo: async () => { const { data } = await db.from('geo_signals').select('*').eq('site_id', id); if (data) setGeoSignals(data); },
           ai: async () => { const { data } = await db.from('ai_mentions').select('*').eq('site_id', id); if (data) setAiMentions(data); },
           keywords: async () => { /* keyword_suggestions fetched separately */ },
+          core30: async () => {
+            const [cp, c30] = await Promise.all([
+              db.from('crawled_pages').select('*').eq('site_id', id).order('page_type'),
+              db.from('core30_plan').select('*').eq('site_id', id).order('priority'),
+            ]);
+            if (cp.data) setCrawledPages(cp.data);
+            if (c30.data) setCore30Plan(c30.data);
+          },
         };
         if (fetchers[section]) await fetchers[section]();
       }, [site]);
@@ -3302,7 +3424,7 @@
       const scores = latest.scores || {};
       const delta = latest.delta || {};
       const core30 = latest.core30_coverage || null;
-      const contentBriefs = latest.content_briefs || [];
+
       const homepageSections = latest.homepage_sections || null;
 
       const chartData = audits.map(a => ({
@@ -3333,7 +3455,9 @@
 
       const openFindings = latestFindings.filter(f => f.status === 'open').length;
       const dirNeedsAtt = directoryListings.filter(l => l.status !== 'listed').length;
-      const missingPages = (core30?.categories_missing||0) + (core30?.services_missing||0);
+      const missingPages = core30Plan.length > 0
+        ? core30Plan.filter(i => i.status === 'gap').length
+        : (core30?.categories_missing||0) + (core30?.services_missing||0);
 
       const hpMissing = homepageSections?.missing || 0;
 
@@ -3373,10 +3497,10 @@
             ))}
           </nav>
 
-          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} locationId={locationId} site={site} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} auditRunning={auditRunning} onOpenAdmin={openAdmin} />}
+          {activeTab === 'overview' && <OverviewTab scores={scores} delta={delta} chartData={chartData} quickWins={quickWins} rankMap={latestRankMap} core30={core30} core30Plan={core30Plan} homepageSections={homepageSections} apifyResults={latest.apify_results || {}} locationId={locationId} site={site} lastAuditDate={latest.audit_date} onAuditStarted={() => setAuditRunning(true)} auditRunning={auditRunning} onOpenAdmin={openAdmin} />}
           {activeTab === 'homepage' && <HomepageTab homepageSections={homepageSections} site={site} />}
           {activeTab === 'rankmap' && <RankMapTab rankMaps={rankMaps} locationId={locationId} onRefresh={() => refreshSection('rankmap')} auditRunning={auditRunning} site={site} keywordSuggestions={keywordSuggestions} />}
-          {activeTab === 'core30' && <Core30Tab core30={core30} contentBriefs={contentBriefs} />}
+          {activeTab === 'core30' && <Core30Tab crawledPages={crawledPages} core30Plan={core30Plan} site={site} locationId={locationId} onRefresh={() => refreshSection('core30')} auditRunning={auditRunning} />}
           {activeTab === 'insights' && <InsightsTab latestFindings={latestFindings} latestGeo={latestGeo} aiMentions={aiMentions} businessName={site.business_name} locationId={locationId} onRefresh={refreshSection} auditRunning={auditRunning} />}
           {activeTab === 'directories' && <DirectoryTab listings={directoryListings} site={site} locationId={locationId} onRefresh={() => refreshSection('directories')} links={linkChecklist} auditRunning={auditRunning} />}
           {activeTab === 'competitors' && <CompetitorsTab competitors={competitors} site={site} aiMentions={aiMentions} locationId={locationId} onRefresh={() => refreshSection('competitors')} auditRunning={auditRunning} />}
