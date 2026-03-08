@@ -1864,6 +1864,18 @@
                   {selected.effort_minutes && <div><span style={{color:'#666'}}>Effort</span> <span style={{marginLeft:'0.25rem'}}>{selected.effort_minutes < 60 ? selected.effort_minutes + ' min' : Math.round(selected.effort_minutes/60*10)/10 + ' hr'}</span></div>}
                 </div>
 
+                {/* Detected value */}
+                {selected.metadata && selected.metadata.detected && (
+                  <div style={{padding:'1rem 1.5rem 0'}}>
+                    <div style={{fontSize:'0.75rem', fontWeight:600, color:'#666', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.5rem'}}>{selected.metadata.label || 'Detected on your site'}</div>
+                    <div style={{background:'#1c1007', border:'1px solid #EA932044', borderRadius:'8px', padding:'0.75rem 1rem', fontSize:'0.85rem', color:'#EA9320', fontFamily:'monospace', wordBreak:'break-all', lineHeight:'1.6'}}>
+                      {Array.isArray(selected.metadata.detected)
+                        ? selected.metadata.detected.map((v, i) => <div key={i} style={{padding:'0.15rem 0'}}>{v}</div>)
+                        : selected.metadata.detected}
+                    </div>
+                  </div>
+                )}
+
                 {/* Fix instructions */}
                 <div style={{padding:'1.5rem'}}>
                   <div style={{fontSize:'0.75rem', fontWeight:600, color:'#666', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'0.75rem'}}>What to do</div>
