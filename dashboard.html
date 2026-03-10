@@ -255,7 +255,12 @@
         if (typeof raw === 'string') { try { return JSON.parse(raw); } catch(e) { return []; } }
         return raw;
       })();
-      const size = parseInt(rm?.grid_size, 10) || Math.round(Math.sqrt(grid.length)) || 5;
+      const size = (() => {
+        const gs = rm?.grid_size;
+        if (!gs) return Math.round(Math.sqrt(grid.length)) || 5;
+        const n = parseInt(String(gs).split('x')[0], 10);
+        return n || Math.round(Math.sqrt(grid.length)) || 5;
+      })();
 
       // Delta vs previous scan in same keyword group
       const scanIdx = scans.findIndex(s => s.id === rm?.id);
