@@ -249,8 +249,13 @@
         return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No rank map data yet</h3><p style={{color:'#666'}}>Run a rank map scan to start tracking your local visibility over time.</p></div>;
       }
 
-      const grid = rm?.grid_data || [];
-      const size = rm?.grid_size || Math.round(Math.sqrt(grid.length)) || 5;
+      const grid = (() => {
+        const raw = rm?.grid_data;
+        if (!raw) return [];
+        if (typeof raw === 'string') { try { return JSON.parse(raw); } catch(e) { return []; } }
+        return raw;
+      })();
+      const size = parseInt(rm?.grid_size, 10) || Math.round(Math.sqrt(grid.length)) || 5;
 
       // Delta vs previous scan in same keyword group
       const scanIdx = scans.findIndex(s => s.id === rm?.id);
