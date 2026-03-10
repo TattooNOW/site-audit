@@ -219,14 +219,10 @@
 
     /* ── Tab: Rank Map ───────────────────────────────────── */
     function RankMapTab({ rankMaps }) {
-      if (!rankMaps || rankMaps.length === 0) {
-        return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No rank map data yet</h3><p style={{color:'#666'}}>Run a rank map scan to start tracking your local visibility over time.</p></div>;
-      }
-
       // Group by keyword, each group sorted oldest→newest
       const byKeyword = React.useMemo(() => {
         const map = {};
-        rankMaps.forEach(r => {
+        (rankMaps || []).forEach(r => {
           if (!map[r.keyword]) map[r.keyword] = [];
           map[r.keyword].push(r);
         });
@@ -235,7 +231,7 @@
       }, [rankMaps]);
 
       const keywords = Object.keys(byKeyword);
-      const [activeKeyword, setActiveKeyword] = React.useState(keywords[0]);
+      const [activeKeyword, setActiveKeyword] = React.useState(keywords[0] || '');
       const scans = byKeyword[activeKeyword] || [];
 
       // Default to most recent scan
@@ -247,6 +243,11 @@
         const group = byKeyword[activeKeyword] || [];
         setSelectedScanId(group[group.length - 1]?.id);
       }, [activeKeyword]);
+
+      // Empty state — after all hooks
+      if (!rankMaps || rankMaps.length === 0) {
+        return <div className="card" style={{textAlign:'center',padding:'3rem'}}><h3 style={{color:'#888'}}>No rank map data yet</h3><p style={{color:'#666'}}>Run a rank map scan to start tracking your local visibility over time.</p></div>;
+      }
 
       const grid = rm?.grid_data || [];
       const size = rm?.grid_size || Math.round(Math.sqrt(grid.length)) || 5;
